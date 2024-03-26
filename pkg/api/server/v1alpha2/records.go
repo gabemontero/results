@@ -16,6 +16,9 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"runtime/pprof"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/google/cel-go/cel"
@@ -34,6 +37,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
+
+func printGoroutines() {
+	// manual testing has confirmed you don't have to explicitly enable pprof to get goroutine dumps with
+	// stack traces; this lines up with the stack traces you receive if a panic occurs, as well as the
+	// stack trace you receive if you send a SIGQUIT and/or SIGABRT to a running go program
+	profile := pprof.Lookup("goroutine")
+	if profile != nil {
+		err := profile.WriteTo(os.Stdout, 2)
+		if err != nil {
+			msg := fmt.Sprintf("problem writing goroutine dump: %s", err.Error())
+			fmt.Println(msg)
+		}
+	} else {
+		fmt.Println("goroutine profile not available")
+	}
+
+}
 
 // CreateRecord creates a new record in the database.
 func (s *Server) CreateRecord(ctx context.Context, req *pb.CreateRecordRequest) (*pb.Record, error) {
@@ -159,6 +179,7 @@ func (s *Server) ListRecords(ctx context.Context, req *pb.ListRecordsRequest) (*
 		return nil, err
 	}
 
+	go printGoroutines()
 	records, nextPageToken, err := recordsLister.List(ctx, s.db)
 	if err != nil {
 		return nil, err

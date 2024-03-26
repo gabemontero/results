@@ -21,9 +21,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"os"
 	"path"
-	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -162,9 +160,6 @@ func main() {
 			return fullMethodName != healthpb.Health_Check_FullMethodName
 		}),
 		grpc_zap.WithDurationField(func(duration time.Duration) zapcore.Field {
-			if duration.Milliseconds() > 5000 {
-				printGoroutines(log)
-			}
 			return zap.Int64("grpc.time_duration_in_ms", duration.Milliseconds())
 		}),
 	}
@@ -276,23 +271,6 @@ func main() {
 		log.Fatal(http.ListenAndServe(":"+serverConfig.SERVER_PORT, grpcHandler(gs, httpMux)))
 	}
 	log.Fatal(http.ListenAndServeTLS(":"+serverConfig.SERVER_PORT, certFile, keyFile, grpcHandler(gs, httpMux)))
-}
-
-func printGoroutines(logger *zap.SugaredLogger) {
-	// manual testing has confirmed you don't have to explicitly enable pprof to get goroutine dumps with
-	// stack traces; this lines up with the stack traces you receive if a panic occurs, as well as the
-	// stack trace you receive if you send a SIGQUIT and/or SIGABRT to a running go program
-	profile := pprof.Lookup("goroutine")
-	if profile != nil {
-		err := profile.WriteTo(os.Stdout, 2)
-		if err != nil {
-			logger.Errorw("problem writing goroutine dump",
-				zap.String("error", err.Error()))
-		}
-	} else {
-		logger.Info("goroutine profile not available")
-	}
-
 }
 
 // grpcHandler forwards the request to gRPC server based on the Content-Type header.
