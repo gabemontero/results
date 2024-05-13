@@ -21,6 +21,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -434,20 +435,59 @@ func (r *Reconciler) sendLog(ctx context.Context, o results.Object) error {
 			zap.String("name", o.GetName()),
 		)
 
-		err = r.streamLogs(ctx, o, logType, logName)
-		if err != nil {
-			logger.Errorw("Error streaming log",
-				zap.String("namespace", o.GetNamespace()),
-				zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-				zap.String("name", o.GetName()),
-				zap.Error(err),
-			)
-		}
-		logger.Debugw("Streaming log completed",
-			zap.String("namespace", o.GetNamespace()),
-			zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-			zap.String("name", o.GetName()),
-		)
+		// so while performance was acceptable with development level storage mechanisms like minio, latency proved
+		// intolerable for even basic amounts of log storage; moving off of the reconciler thread again, and
+		// completely divesting from its context, now using the background context and a separate timer to provide
+		// for timeout capability
+		go func() {
+			//TODO need to leverage the log status API noting log storage completion to coordinate with pruning
+			backgroundCtx, cancel := context.WithCancel(context.Background())
+			// need this to get grpc to clean up its threads
+			defer cancel()
+			timeout := 30 * time.Second
+			// context with timeout does not work with the partial end to end flow that exists with unit tests;
+			// this field will alway be set for real
+			if r.cfg != nil && r.cfg.UpdateLogTimeout != nil {
+				// given what we saw against S3 with log storage sometimes timing out after 30 seconds, give some buffer
+				timeout = *r.cfg.UpdateLogTimeout * 10
+			}
+			eventTicker := time.NewTicker(timeout)
+			// make buffered for golang GC
+			stopCh := make(chan bool, 1)
+			once := sync.Once{}
+
+			go func() {
+				err = r.streamLogs(backgroundCtx, o, logType, logName)
+				if err != nil {
+					logger.Errorw("Error streaming log",
+						zap.String("namespace", o.GetNamespace()),
+						zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+						zap.String("name", o.GetName()),
+						zap.Error(err),
+					)
+				}
+				logger.Infow("Streaming log completed",
+					zap.String("namespace", o.GetNamespace()),
+					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+					zap.String("name", o.GetName()),
+				)
+				once.Do(func() { close(stopCh) })
+			}()
+
+			select {
+			case <-eventTicker.C:
+				once.Do(func() { close(stopCh) })
+				logger.Infow("Leaving dynamic Reconciler only after timeout, initiating thread dump",
+					zap.String("namespace", o.GetNamespace()),
+					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+					zap.String("name", o.GetName()))
+				printGoroutines(logger, o)
+
+			case <-stopCh:
+				eventTicker.Stop()
+			}
+
+		}()
 
 	}
 
@@ -533,10 +573,7 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 			zap.String("errStr", errStr))
 	}
 
-	flushCount, flushErr := writer.Flush()
-	logger.Warnw("flush ret count",
-		zap.String("name", o.GetName()),
-		zap.Int("flushCount", flushCount))
+	_, flushErr := writer.Flush()
 	if flushErr != nil {
 		logger.Warnw("flush ret err",
 			zap.String("error", flushErr.Error()))
