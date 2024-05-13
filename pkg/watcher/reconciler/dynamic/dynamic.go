@@ -477,7 +477,7 @@ func (r *Reconciler) sendLog(ctx context.Context, o results.Object) error {
 			select {
 			case <-eventTicker.C:
 				once.Do(func() { close(stopCh) })
-				logger.Infow("Leaving dynamic Reconciler only after timeout, initiating thread dump",
+				logger.Infow("Leaving streamLogs thread only after timeout, initiating thread dump",
 					zap.String("namespace", o.GetNamespace()),
 					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
 					zap.String("name", o.GetName()))
