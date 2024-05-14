@@ -465,6 +465,7 @@ func (r *Reconciler) sendLog(ctx context.Context, o results.Object) error {
 						zap.String("name", o.GetName()),
 						zap.Error(err),
 					)
+					//TODO once we have the log status available, report the error there for retry if needed
 				}
 				logger.Infow("Streaming log completed",
 					zap.String("namespace", o.GetNamespace()),
@@ -484,6 +485,7 @@ func (r *Reconciler) sendLog(ctx context.Context, o results.Object) error {
 				printGoroutines(logger, o)
 
 			case <-stopCh:
+				// this is safe to call twice, as it does not need to close its buffered channel
 				eventTicker.Stop()
 			}
 
