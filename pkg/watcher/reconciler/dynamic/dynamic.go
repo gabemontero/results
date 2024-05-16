@@ -123,7 +123,7 @@ func printGoroutines(logger *zap.SugaredLogger, o results.Object) {
 func (r *Reconciler) Reconcile(ctx context.Context, o results.Object) error {
 	var ctxCancel context.CancelFunc
 	// context with timeout does not work with the partial end to end flow that exists with unit tests;
-	// this field will alway be set for real
+	// this field will always be set for real
 	if r.cfg != nil && r.cfg.UpdateLogTimeout != nil {
 		ctx, ctxCancel = context.WithTimeout(ctx, *r.cfg.UpdateLogTimeout)
 	}
@@ -196,21 +196,67 @@ func (r *Reconciler) Reconcile(ctx context.Context, o results.Object) error {
 
 	// Update logs if enabled.
 	if r.resultsClient.LogsClient != nil {
-		if err = r.sendLog(ctx, o); err != nil {
-			logger.Errorw("Error sending log",
-				zap.String("namespace", o.GetNamespace()),
-				zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-				zap.String("name", o.GetName()),
-				zap.Error(err),
-			)
-			// in case a call to cancel overwrites the error set in the context
-			if status.Code(err) == codes.DeadlineExceeded {
-				printGoroutines(logger, o)
+		if r.cfg == nil || r.cfg.UpdateLogTimeout == nil {
+			// single threaded for unit tests given fragility of fake k8s client
+			if err = r.sendLog(ctx, o); err != nil {
+				logger.Errorw("Error sending log",
+					zap.String("namespace", o.GetNamespace()),
+					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+					zap.String("name", o.GetName()),
+					zap.Error(err),
+				)
 			}
-			if ctxCancel != nil {
-				ctxCancel()
-			}
-			return err
+
+		} else {
+			// so while performance was acceptable with development level storage mechanisms like minio, latency proved
+			// intolerable for even basic amounts of log storage; moving off of the reconciler thread again, and
+			// completely divesting from its context, now using the background context and a separate timer to provide
+			// for timeout capability
+			go func() {
+				//TODO need to leverage the log status API noting log storage completion to coordinate with pruning
+				backgroundCtx, cancel := context.WithCancel(context.Background())
+				// need this to get grpc to clean up its threads
+				defer cancel()
+				timeout := 30 * time.Second
+				// context with timeout does not work with the partial end to end flow that exists with unit tests;
+				// this field will alway be set for real
+				if r.cfg != nil && r.cfg.UpdateLogTimeout != nil {
+					// given what we saw against S3 with log storage sometimes timing out after 30 seconds, give some buffer
+					timeout = *r.cfg.UpdateLogTimeout * 10
+				}
+				eventTicker := time.NewTicker(timeout)
+				// make buffered for golang GC
+				stopCh := make(chan bool, 1)
+				once := sync.Once{}
+
+				go func() {
+					if err = r.sendLog(backgroundCtx, o); err != nil {
+						logger.Errorw("Error sending log",
+							zap.String("namespace", o.GetNamespace()),
+							zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+							zap.String("name", o.GetName()),
+							zap.Error(err),
+						)
+					}
+					once.Do(func() { close(stopCh) })
+					//TODO once we have the log status available, report the error there for retry if needed
+				}()
+
+				select {
+				case <-eventTicker.C:
+					once.Do(func() { close(stopCh) })
+					logger.Infow("Leaving sendLogs thread only after timeout, initiating thread dump",
+						zap.String("namespace", o.GetNamespace()),
+						zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+						zap.String("name", o.GetName()))
+					printGoroutines(logger, o)
+
+				case <-stopCh:
+					// this is safe to call twice, as it does not need to close its buffered channel
+					eventTicker.Stop()
+				}
+			}()
+
 		}
 	}
 
@@ -435,61 +481,21 @@ func (r *Reconciler) sendLog(ctx context.Context, o results.Object) error {
 			zap.String("name", o.GetName()),
 		)
 
-		// so while performance was acceptable with development level storage mechanisms like minio, latency proved
-		// intolerable for even basic amounts of log storage; moving off of the reconciler thread again, and
-		// completely divesting from its context, now using the background context and a separate timer to provide
-		// for timeout capability
-		go func() {
-			//TODO need to leverage the log status API noting log storage completion to coordinate with pruning
-			backgroundCtx, cancel := context.WithCancel(context.Background())
-			// need this to get grpc to clean up its threads
-			defer cancel()
-			timeout := 30 * time.Second
-			// context with timeout does not work with the partial end to end flow that exists with unit tests;
-			// this field will alway be set for real
-			if r.cfg != nil && r.cfg.UpdateLogTimeout != nil {
-				// given what we saw against S3 with log storage sometimes timing out after 30 seconds, give some buffer
-				timeout = *r.cfg.UpdateLogTimeout * 10
-			}
-			eventTicker := time.NewTicker(timeout)
-			// make buffered for golang GC
-			stopCh := make(chan bool, 1)
-			once := sync.Once{}
-
-			go func() {
-				err = r.streamLogs(backgroundCtx, o, logType, logName)
-				if err != nil {
-					logger.Errorw("Error streaming log",
-						zap.String("namespace", o.GetNamespace()),
-						zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-						zap.String("name", o.GetName()),
-						zap.Error(err),
-					)
-					//TODO once we have the log status available, report the error there for retry if needed
-				}
-				logger.Infow("Streaming log completed",
-					zap.String("namespace", o.GetNamespace()),
-					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-					zap.String("name", o.GetName()),
-				)
-				once.Do(func() { close(stopCh) })
-			}()
-
-			select {
-			case <-eventTicker.C:
-				once.Do(func() { close(stopCh) })
-				logger.Infow("Leaving streamLogs thread only after timeout, initiating thread dump",
-					zap.String("namespace", o.GetNamespace()),
-					zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
-					zap.String("name", o.GetName()))
-				printGoroutines(logger, o)
-
-			case <-stopCh:
-				// this is safe to call twice, as it does not need to close its buffered channel
-				eventTicker.Stop()
-			}
-
-		}()
+		err = r.streamLogs(ctx, o, logType, logName)
+		if err != nil {
+			logger.Errorw("Error streaming log",
+				zap.String("namespace", o.GetNamespace()),
+				zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+				zap.String("name", o.GetName()),
+				zap.Error(err),
+			)
+			//TODO once we have the log status available, report the error there for retry if needed
+		}
+		logger.Infow("Streaming log completed",
+			zap.String("namespace", o.GetNamespace()),
+			zap.String("kind", o.GetObjectKind().GroupVersionKind().Kind),
+			zap.String("name", o.GetName()),
+		)
 
 	}
 
@@ -514,6 +520,8 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 	// the log.  That, coupled with the fact that the tkn client wrappers and oftent masks errors
 	// makes it impossible to differentiate between retryable and permanent k8s errors wrt retrying
 	// reconciliation in this controller
+
+	startTime := time.Now()
 
 	reader, err := tknlog.NewReader(logType, &tknopts.LogOptions{
 		AllSteps:        true,
@@ -603,6 +611,10 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 		logger.Error(closeErr)
 		return closeErr
 	}
+	endTime := time.Now()
+
+	logger.Infof("GGM streamLogs logType %s logName %s obj ns %s obj name %s times spent %s",
+		logType, logName, o.GetNamespace(), o.GetName(), endTime.Sub(startTime).String())
 
 	logger.Debugw("Exiting streamLogs",
 		zap.String("namespace", o.GetNamespace()),

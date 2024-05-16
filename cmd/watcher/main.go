@@ -105,6 +105,7 @@ func main() {
 		CheckOwner:                   *checkOwner,
 		UpdateLogTimeout:             updateLogTimeout,
 	}
+	log.Printf("GGM update log timeout is %s", cfg.UpdateLogTimeout.String())
 
 	if selector := *labelSelector; selector != "" {
 		if err := cfg.SetLabelSelector(selector); err != nil {
