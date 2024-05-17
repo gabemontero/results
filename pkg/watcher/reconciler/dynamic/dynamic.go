@@ -127,11 +127,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, o results.Object) error {
 	if r.cfg != nil && r.cfg.UpdateLogTimeout != nil {
 		ctx, ctxCancel = context.WithTimeout(ctx, *r.cfg.UpdateLogTimeout)
 	}
+
+	var startTime time.Time
+
 	// we dont defer the dynamicCancle because golang defers follow a LIFO pattern
 	// and we want to have our context analysis defer function be able to distinguish between
 	// the context channel being closed because of Canceled or DeadlineExceeded
 	logger := logging.FromContext(ctx)
 	defer func() {
+		logger.Infof("GGM dynamic Reconcile kind %s obj ns %s obj name %s times spent %s",
+			o.GetObjectKind().GroupVersionKind().Kind, o.GetNamespace(), o.GetName(), time.Now().Sub(startTime).String())
 		if ctx == nil {
 			return
 		}
@@ -178,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, o results.Object) error {
 	}
 
 	// Upsert record.
-	startTime := time.Now()
+	startTime = time.Now()
 	res, rec, err := r.resultsClient.Put(ctx, o)
 	timeTakenField := zap.Int64("results.tekton.dev/time-taken-ms", time.Since(startTime).Milliseconds())
 

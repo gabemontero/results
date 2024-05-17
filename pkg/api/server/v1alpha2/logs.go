@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/google/cel-go/cel"
@@ -97,11 +98,18 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 	var rec *db.Record
 	var object *v1alpha2.Log
 	var stream log.Stream
+
+	startTime := time.Now()
+	var endTimeFlush time.Time
+
 	defer func() {
 		if stream != nil {
 			if err := stream.Flush(); err != nil {
 				s.logger.Error(err)
 			}
+			endTimeFlush = time.Now()
+			s.logger.Infof("GGM UpateLog after flush name %s parent %s resultName %s recordName %s time spent %s",
+				name, parent, resultName, recordName, endTimeFlush.Sub(startTime).String())
 		}
 	}()
 	for {
@@ -116,7 +124,7 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		recv, err := srv.Recv()
 		// If we reach the end of the srv, we receive an io.EOF error
 		if err != nil {
-			return s.handleReturn(srv, rec, object, bytesWritten, err)
+			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 		}
 		// Ensure that we are receiving logs for the same record
 		if name == "" {
@@ -124,11 +132,11 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			s.logger.Debugf("receiving logs for %s", name)
 			parent, resultName, recordName, err = log.ParseName(name)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err)
+				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
 
 			if err := s.auth.Check(srv.Context(), parent, auth.ResourceLogs, auth.PermissionUpdate); err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err)
+				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
 		}
 		if name != recv.GetName() {
@@ -137,20 +145,21 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 				rec,
 				object,
 				bytesWritten,
-				err)
+				err,
+				startTime)
 		}
 
 		if rec == nil {
 			rec, err = getRecord(s.db.WithContext(srv.Context()), parent, resultName, recordName)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err)
+				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
 		}
 
 		if stream == nil {
 			stream, object, err = log.ToStream(srv.Context(), rec, s.config)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err)
+				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
 		}
 
@@ -159,15 +168,31 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		bytesWritten += written
 
 		if err != nil {
-			return s.handleReturn(srv, rec, object, bytesWritten, err)
+			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 		}
 	}
 }
 
-func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *v1alpha2.Log, written int64, returnErr error) error {
+func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *v1alpha2.Log, written int64, returnErr error, startTime time.Time) error {
 	// When the srv reaches the end, srv.Recv() returns an io.EOF error
 	// Therefore we should not return io.EOF if it is received in this function.
 	// Otherwise, we should return the original error and not mask any subsequent errors handling cleanup/return.
+
+	defer func() {
+		timeSpent := time.Now().Sub(startTime).String()
+		prefix := ""
+		if log != nil {
+			prefix = prefix + fmt.Sprintf("kind %s ns %s name %s ",
+				log.Spec.Resource.Kind,
+				log.Spec.Resource.Namespace,
+				log.Spec.Resource.Name)
+		}
+		if rec != nil {
+			prefix = prefix + fmt.Sprintf("rec parent %s rec name %s ", rec.Parent, rec.Name)
+		}
+		msg := fmt.Sprintf("GGM UpdateLog after handleReturn %s time spent %s", prefix, timeSpent)
+		s.logger.Info(msg)
+	}()
 
 	// If no database record or Log, return the original error
 	if rec == nil || log == nil {
