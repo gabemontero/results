@@ -108,11 +108,15 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 				s.logger.Error(err)
 			}
 			endTimeFlush = time.Now()
-			s.logger.Infof("GGM UpateLog after flush name %s parent %s resultName %s recordName %s time spent %s",
-				name, parent, resultName, recordName, endTimeFlush.Sub(startTime).String())
+			s.logger.Infof("GGM UpateLog after flush kind %s ns %s name %s result name %s parent %s resultName %s recordName %s time spent %s",
+				object.Spec.Resource.Kind, object.Spec.Resource.Namespace, object.Spec.Resource.Name, name, parent, resultName, recordName, endTimeFlush.Sub(startTime).String())
 		}
 	}()
 	for {
+		obj := v1alpha2.Resource{}
+		if object != nil {
+			obj = object.Spec.Resource
+		}
 		// the underlying grpc stream RecvMsg method blocks until this receives a message or it is done,
 		// with the client now setting a context deadline, if a timeout occurs, that should make this done/canceled; let's check to confirm
 		//deadline, ok := srv.Context().Deadline()
@@ -121,11 +125,14 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		//} else {
 		//	s.logger.Infof("UpdateLog called with deadline: %s for %#v", deadline.String(), srv)
 		//}
+		recvStart := time.Now()
 		recv, err := srv.Recv()
 		// If we reach the end of the srv, we receive an io.EOF error
 		if err != nil {
 			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 		}
+		s.logger.Infof("GGM2 GRPC receive kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(recvStart).String())
+
 		// Ensure that we are receiving logs for the same record
 		if name == "" {
 			name = recv.GetName()
@@ -134,10 +141,11 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
-
+			authStart := time.Now()
 			if err := s.auth.Check(srv.Context(), parent, auth.ResourceLogs, auth.PermissionUpdate); err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
+			s.logger.Infof("GGM3 RBAC check kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(authStart).String())
 		}
 		if name != recv.GetName() {
 			err := fmt.Errorf("cannot put logs for multiple records in the same server")
@@ -150,22 +158,28 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		}
 
 		if rec == nil {
+			recStart := time.Now()
 			rec, err = getRecord(s.db.WithContext(srv.Context()), parent, resultName, recordName)
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
+			s.logger.Infof("GGM4 get record kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(recStart).String())
 		}
 
 		if stream == nil {
+			createStreamStart := time.Now()
 			stream, object, err = log.ToStream(srv.Context(), rec, s.config)
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
+			s.logger.Infof("GGM5 create stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(createStreamStart).String())
 		}
 
+		readStart := time.Now()
 		buffer := bytes.NewBuffer(recv.GetData())
 		written, err := stream.ReadFrom(buffer)
 		bytesWritten += written
+		s.logger.Infof("GGM6 read stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(readStart).String())
 
 		if err != nil {
 			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
@@ -189,6 +203,9 @@ func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *
 		}
 		if rec != nil {
 			prefix = prefix + fmt.Sprintf("rec parent %s rec name %s ", rec.Parent, rec.Name)
+		}
+		if returnErr != nil {
+			prefix = prefix + fmt.Sprintf("returnErr %s ", returnErr.Error())
 		}
 		msg := fmt.Sprintf("GGM UpdateLog after handleReturn %s time spent %s", prefix, timeSpent)
 		s.logger.Info(msg)
