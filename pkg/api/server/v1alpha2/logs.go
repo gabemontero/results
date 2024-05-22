@@ -1,15 +1,22 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/google/cel-go/cel"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	celenv "github.com/tektoncd/results/pkg/api/server/cel"
 	"github.com/tektoncd/results/pkg/api/server/db/errors"
 	"github.com/tektoncd/results/pkg/api/server/db/pagination"
@@ -172,19 +179,104 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 			}
+			obj = object.Spec.Resource
 			s.logger.Infof("GGM5 create stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(createStreamStart).String())
 		}
 
 		readStart := time.Now()
-		buffer := bytes.NewBuffer(recv.GetData())
-		written, err := stream.ReadFrom(buffer)
-		bytesWritten += written
-		s.logger.Infof("GGM6 read stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(readStart).String())
 
+		var labelKey string
+		switch obj.Kind {
+		case "TaskRun":
+			labelKey = pipeline.TaskRunLabelKey
+		case "PipelineRun":
+			labelKey = pipeline.PipelineLabelKey
+		}
+
+		inMemWriteBufferStdout := bytes.NewBuffer(make([]byte, 0))
+
+		lo := metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("%s=%s", labelKey, obj.Name),
+		}
+		var pods *corev1.PodList
+		pods, err = s.k8s.CoreV1().Pods(obj.Namespace).List(srv.Context(), lo)
 		if err != nil {
 			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 		}
+		for _, pod := range pods.Items {
+			// fyi gocritic complained about employing 'containers := append(pod.Spec.InitContainers, pod.Spec.Containers...)'
+			containers := []corev1.Container{}
+			copy(containers, pod.Spec.InitContainers)
+			containers = append(containers, pod.Spec.Containers...)
+			for _, container := range containers {
+				pipelineTaskName := pod.Labels[pipeline.PipelineTaskLabelKey]
+				taskName := pod.Labels[pipeline.TaskLabelKey]
+
+				task := taskName
+				if len(task) == 0 {
+					task = pipelineTaskName
+				}
+				ba, podLogsErr := s.getPodLogs(srv.Context(), obj.Namespace, pod.Name, container.Name, labelKey, task)
+				if podLogsErr != nil {
+					return podLogsErr
+				}
+				inMemWriteBufferStdout.Write(ba)
+			}
+		}
+
+		//buffer := bytes.NewBuffer(recv.GetData())
+		//written, err := stream.ReadFrom(buffer)
+		written, err := stream.ReadFrom(inMemWriteBufferStdout)
+		bytesWritten += written
+		s.logger.Infof("GGM6 read stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(readStart).String())
+
+		return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
 	}
+}
+
+func (s *Server) getPodLogs(ctx context.Context, ns, pod, container, labelKey, task string) ([]byte, error) {
+	podLogOpts := corev1.PodLogOptions{
+		Container: container,
+	}
+	req := s.k8s.CoreV1().Pods(ns).GetLogs(pod, &podLogOpts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer podLogs.Close()
+
+	if err != nil && k8serrors.IsNotFound(err) {
+		msg := fmt.Sprintf("error getting logs for pod %s container %s: %s", pod, container, err.Error())
+		msgBytes := []byte(msg)
+		return msgBytes, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rdr := bufio.NewReader(podLogs)
+	buf := new(bytes.Buffer)
+	for {
+		var line []byte
+		line, _, err = rdr.ReadLine()
+		if err != nil && err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		str := ""
+		stepName := strings.TrimPrefix(container, "step-")
+		str = fmt.Sprintf("[%s : %s] %s\n", task, stepName, string(line))
+		if labelKey == pipeline.TaskRunLabelKey {
+			str = fmt.Sprintf("[%s] %s\n", stepName, string(line))
+		}
+		_, err = buf.Write([]byte(str))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+
 }
 
 func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *v1alpha2.Log, written int64, returnErr error, startTime time.Time) error {
@@ -216,6 +308,7 @@ func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *
 		return returnErr
 	}
 	apiRec := record.ToAPI(rec)
+
 	apiRec.UpdateTime = timestamppb.Now()
 	if written > 0 {
 		log.Status.Size = written
@@ -244,7 +337,7 @@ func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *
 		return err
 	}
 
-	if returnErr == io.EOF {
+	if returnErr == io.EOF || returnErr == nil {
 		s.logger.Debugf("received %d bytes for %s", written, apiRec.GetName())
 		return srv.SendAndClose(&pb.LogSummary{
 			Record:        apiRec.Name,

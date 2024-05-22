@@ -45,7 +45,7 @@ import (
 )
 
 func TestCreateRecord(t *testing.T) {
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -160,6 +160,7 @@ func TestCreateRecord_ConcurrentDelete(t *testing.T) {
 		&config.Config{DB_ENABLE_AUTO_MIGRATION: true},
 		logger.Get("info"),
 		test.NewDB(t),
+		nil,
 		withGetResultID(func(context.Context, string, string) (string, error) {
 			return result, nil
 		}),
@@ -182,7 +183,7 @@ func TestCreateRecord_ConcurrentDelete(t *testing.T) {
 }
 
 func TestGetRecord(t *testing.T) {
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -250,7 +251,7 @@ func TestGetRecord(t *testing.T) {
 func TestListRecords(t *testing.T) {
 	lastID = 0
 	// Create a temporary database
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to setup db: %v", err)
 	}
@@ -539,7 +540,7 @@ func TestListRecords(t *testing.T) {
 }
 
 func TestUpdateRecord(t *testing.T) {
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -681,7 +682,7 @@ func TestUpdateRecord(t *testing.T) {
 }
 
 func TestDeleteRecord(t *testing.T) {
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -728,7 +729,7 @@ func TestDeleteRecord(t *testing.T) {
 // TestListRecords_multiresult tests listing records across multiple parents.
 func TestListRecords_multiresult(t *testing.T) {
 	// Create a temporary database
-	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t))
+	srv, err := New(&config.Config{DB_ENABLE_AUTO_MIGRATION: true}, logger.Get("info"), test.NewDB(t), nil)
 	if err != nil {
 		t.Fatalf("failed to setup db: %v", err)
 	}

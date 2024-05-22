@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/client-go/kubernetes"
+
 	"github.com/google/cel-go/cel"
 	"github.com/tektoncd/results/pkg/api/server/config"
 	"go.uber.org/zap"
@@ -51,13 +53,14 @@ type Server struct {
 	recordsEnv *cel.Env
 	db         *gorm.DB
 	auth       auth.Checker
+	k8s        kubernetes.Interface
 
 	// testing.
 	getResultID getResultID
 }
 
 // New set up environment for the api server
-func New(config *config.Config, logger *zap.SugaredLogger, db *gorm.DB, opts ...Option) (*Server, error) {
+func New(config *config.Config, logger *zap.SugaredLogger, db *gorm.DB, k8s kubernetes.Interface, opts ...Option) (*Server, error) {
 	env, err := resultscel.NewEnv()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
@@ -81,6 +84,7 @@ func New(config *config.Config, logger *zap.SugaredLogger, db *gorm.DB, opts ...
 		logger:     logger,
 		// Default open auth for easier testing.
 		auth: auth.AllowAll{},
+		k8s:  k8s,
 	}
 
 	// Set default impls of overridable behavior
