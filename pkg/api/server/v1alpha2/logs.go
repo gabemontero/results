@@ -104,12 +104,13 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 
 	defer func() {
 		if stream != nil {
+			flushTime := time.Now()
 			if err := stream.Flush(); err != nil {
 				s.logger.Error(err)
 			}
 			endTimeFlush = time.Now()
 			s.logger.Infof("GGM UpateLog after flush kind %s ns %s name %s result name %s parent %s resultName %s recordName %s time spent %s",
-				object.Spec.Resource.Kind, object.Spec.Resource.Namespace, object.Spec.Resource.Name, name, parent, resultName, recordName, endTimeFlush.Sub(startTime).String())
+				object.Spec.Resource.Kind, object.Spec.Resource.Namespace, object.Spec.Resource.Name, name, parent, resultName, recordName, endTimeFlush.Sub(flushTime).String())
 		}
 	}()
 	for {
