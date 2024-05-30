@@ -99,18 +99,11 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 	var object *v1alpha2.Log
 	var stream log.Stream
 
-	startTime := time.Now()
-	var endTimeFlush time.Time
-
 	defer func() {
 		if stream != nil {
-			flushTime := time.Now()
 			if err := stream.Flush(); err != nil {
 				s.logger.Error(err)
 			}
-			endTimeFlush = time.Now()
-			s.logger.Infof("GGM UpateLog after flush kind %s ns %s name %s result name %s parent %s resultName %s recordName %s time spent %s",
-				object.Spec.Resource.Kind, object.Spec.Resource.Namespace, object.Spec.Resource.Name, name, parent, resultName, recordName, endTimeFlush.Sub(flushTime).String())
 		}
 	}()
 	for {
@@ -130,7 +123,7 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		recv, err := srv.Recv()
 		// If we reach the end of the srv, we receive an io.EOF error
 		if err != nil {
-			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+			return s.handleReturn(srv, rec, object, bytesWritten, err)
 		}
 		s.logger.Infof("GGM2 GRPC receive kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(recvStart).String())
 
@@ -140,11 +133,11 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			s.logger.Debugf("receiving logs for %s", name)
 			parent, resultName, recordName, err = log.ParseName(name)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
 			authStart := time.Now()
 			if err := s.auth.Check(srv.Context(), parent, auth.ResourceLogs, auth.PermissionUpdate); err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
 			s.logger.Infof("GGM3 RBAC check kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(authStart).String())
 		}
@@ -154,15 +147,14 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 				rec,
 				object,
 				bytesWritten,
-				err,
-				startTime)
+				err)
 		}
 
 		if rec == nil {
 			recStart := time.Now()
 			rec, err = getRecord(s.db.WithContext(srv.Context()), parent, resultName, recordName)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
 			s.logger.Infof("GGM4 get record kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(recStart).String())
 		}
@@ -171,7 +163,7 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			createStreamStart := time.Now()
 			stream, object, err = log.ToStream(srv.Context(), rec, s.config)
 			if err != nil {
-				return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
 			s.logger.Infof("GGM5 create stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(createStreamStart).String())
 		}
@@ -183,34 +175,15 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		s.logger.Infof("GGM6 read stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(readStart).String())
 
 		if err != nil {
-			return s.handleReturn(srv, rec, object, bytesWritten, err, startTime)
+			return s.handleReturn(srv, rec, object, bytesWritten, err)
 		}
 	}
 }
 
-func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *v1alpha2.Log, written int64, returnErr error, startTime time.Time) error {
+func (s *Server) handleReturn(srv pb.Logs_UpdateLogServer, rec *db.Record, log *v1alpha2.Log, written int64, returnErr error) error {
 	// When the srv reaches the end, srv.Recv() returns an io.EOF error
 	// Therefore we should not return io.EOF if it is received in this function.
 	// Otherwise, we should return the original error and not mask any subsequent errors handling cleanup/return.
-
-	defer func() {
-		timeSpent := time.Now().Sub(startTime).String()
-		prefix := ""
-		if log != nil {
-			prefix = prefix + fmt.Sprintf("kind %s ns %s name %s ",
-				log.Spec.Resource.Kind,
-				log.Spec.Resource.Namespace,
-				log.Spec.Resource.Name)
-		}
-		if rec != nil {
-			prefix = prefix + fmt.Sprintf("rec parent %s rec name %s ", rec.Parent, rec.Name)
-		}
-		if returnErr != nil {
-			prefix = prefix + fmt.Sprintf("returnErr %s ", returnErr.Error())
-		}
-		msg := fmt.Sprintf("GGM UpdateLog after handleReturn %s time spent %s", prefix, timeSpent)
-		s.logger.Info(msg)
-	}()
 
 	// If no database record or Log, return the original error
 	if rec == nil || log == nil {
