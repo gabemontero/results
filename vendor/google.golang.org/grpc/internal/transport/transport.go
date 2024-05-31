@@ -159,6 +159,7 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 	if r.err != nil {
 		return 0, r.err
 	}
+	startTime := time.Now()
 	if r.last != nil {
 		// Read remaining data left in last call.
 		copied, _ := r.last.Read(p)
@@ -166,12 +167,20 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 			r.freeBuffer(r.last)
 			r.last = nil
 		}
+		lastDuration := time.Now().Sub(startTime)
+		if lastDuration.Seconds() > 10 {
+			fmt.Println(fmt.Sprintf("GGMGGM10 transport.go recvBufferReader Read last time spent %s", lastDuration.String()))
+		}
 		return copied, nil
 	}
 	if r.closeStream != nil {
 		n, r.err = r.readClient(p)
 	} else {
 		n, r.err = r.read(p)
+	}
+	duration := time.Now().Sub(startTime)
+	if duration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM10 transport.go recvBufferReader Read time spent %s", duration.String()))
 	}
 	return n, r.err
 }
@@ -500,8 +509,14 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	if er := s.trReader.(*transportReader).er; er != nil {
 		return 0, er
 	}
+	startTime := time.Now()
 	s.requestRead(len(p))
-	return io.ReadFull(s.trReader, p)
+	r, e := io.ReadFull(s.trReader, p)
+	duration := time.Now().Sub(startTime)
+	if duration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM8 transport.go Stream Read time spent %s", duration.String()))
+	}
+	return r, e
 }
 
 // tranportReader reads all the data available for this Stream from the transport and
@@ -517,12 +532,25 @@ type transportReader struct {
 }
 
 func (t *transportReader) Read(p []byte) (n int, err error) {
+	readFullStart := time.Now()
 	n, err = t.reader.Read(p)
+	readFullDuration := time.Now().Sub(readFullStart)
 	if err != nil {
+		if readFullDuration.Seconds() > 10 {
+			fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader err time spent %s", readFullDuration.String()))
+		}
 		t.er = err
 		return
 	}
+	if readFullDuration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader no err time spent %s", readFullDuration.String()))
+	}
+	callbackStart := time.Now()
 	t.windowHandler(n)
+	callbackDuration := time.Now().Sub(callbackStart)
+	if callbackDuration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader callback time spent %s", callbackDuration.String()))
+	}
 	return
 }
 

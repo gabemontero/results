@@ -2,6 +2,7 @@ package grpc_zap
 
 import (
 	"context"
+	//"fmt"
 	"path"
 	"time"
 
@@ -47,6 +48,7 @@ func StreamServerInterceptor(logger *zap.Logger, opts ...Option) grpc.StreamServ
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		startTime := time.Now()
 		newCtx := newLoggerForCall(stream.Context(), logger, info.FullMethod, startTime, o.timestampFormat)
+		//fmt.Println(fmt.Sprintf("GGMGGM2 server_interceptors.go passing stream %#v to wrapper", stream))
 		wrapped := grpc_middleware.WrapServerStream(stream)
 		wrapped.WrappedContext = newCtx
 

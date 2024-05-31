@@ -21,9 +21,11 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1682,7 +1684,22 @@ func (ss *serverStream) SendMsg(m any) (err error) {
 }
 
 func (ss *serverStream) RecvMsg(m any) (err error) {
+	var startTime time.Time
+	var readerString string
+	doLog := false
+	if ss.p != nil && ss.p.r != nil {
+		readerString = fmt.Sprintf("%#v", ss.p.r)
+	}
+	if strings.Contains(readerString, "UpdateLog") {
+		doLog = true
+		startTime = time.Now()
+	}
+
 	defer func() {
+		var deferTime time.Time
+		if doLog {
+			deferTime = time.Now()
+		}
 		if ss.trInfo != nil {
 			ss.mu.Lock()
 			if ss.trInfo.tr != nil {
@@ -1708,12 +1725,24 @@ func (ss *serverStream) RecvMsg(m any) (err error) {
 		if channelz.IsOn() && err == nil {
 			ss.t.IncrMsgRecv()
 		}
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg defer time spent %s", time.Now().Sub(deferTime)))
+			fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg time spent %s", time.Now().Sub(startTime)))
+		}
 	}()
 	var payInfo *payloadInfo
 	if len(ss.statsHandler) != 0 || len(ss.binlogs) != 0 {
 		payInfo = &payloadInfo{}
 	}
+	var recvStart time.Time
+	if doLog {
+		recvStart = time.Now()
+	}
 	if err := recv(ss.p, ss.codec, ss.s, ss.dc, m, ss.maxReceiveMessageSize, payInfo, ss.decomp); err != nil {
+		var recvErrStart time.Time
+		if doLog {
+			recvErrStart = time.Now()
+		}
 		if err == io.EOF {
 			if len(ss.binlogs) != 0 {
 				chc := &binarylog.ClientHalfClose{}
@@ -1721,14 +1750,27 @@ func (ss *serverStream) RecvMsg(m any) (err error) {
 					binlog.Log(ss.ctx, chc)
 				}
 			}
+			if doLog {
+				fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg recv eof error time spent %s", time.Now().Sub(recvErrStart)))
+			}
 			return err
 		}
 		if err == io.ErrUnexpectedEOF {
 			err = status.Errorf(codes.Internal, io.ErrUnexpectedEOF.Error())
 		}
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg recv rpc error time spent %s", time.Now().Sub(recvErrStart)))
+		}
 		return toRPCErr(err)
 	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg recv no error time spent %s", time.Now().Sub(recvStart)))
+	}
 	if len(ss.statsHandler) != 0 {
+		var statsStart time.Time
+		if doLog {
+			statsStart = time.Now()
+		}
 		for _, sh := range ss.statsHandler {
 			sh.HandleRPC(ss.s.Context(), &stats.InPayload{
 				RecvTime: time.Now(),
@@ -1740,13 +1782,23 @@ func (ss *serverStream) RecvMsg(m any) (err error) {
 				CompressedLength: payInfo.compressedLength,
 			})
 		}
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg stats time spent %s", time.Now().Sub(statsStart)))
+		}
 	}
 	if len(ss.binlogs) != 0 {
+		var binStart time.Time
+		if doLog {
+			binStart = time.Now()
+		}
 		cm := &binarylog.ClientMessage{
 			Message: payInfo.uncompressedBytes,
 		}
 		for _, binlog := range ss.binlogs {
 			binlog.Log(ss.ctx, cm)
+		}
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM4 stream.go serverStream RecvMsg binlog time spent %s", time.Now().Sub(binStart)))
 		}
 	}
 	return nil

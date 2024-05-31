@@ -597,28 +597,75 @@ type parser struct {
 // that the underlying io.Reader must not return an incompatible
 // error.
 func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byte, err error) {
+	var startTime time.Time
+	readerString := fmt.Sprintf("%#v", p.r)
+	doLog := false
+	if strings.Contains(readerString, "UpdateLog") {
+		doLog = true
+		startTime = time.Now()
+	}
 	if _, err := p.r.Read(p.header[:]); err != nil {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg err golang header read time %s", time.Now().Sub(startTime)))
+		}
 		return 0, nil, err
+	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg no err golang header read time %s reader %#v", time.Now().Sub(startTime), p.r))
+	}
+
+	var payloadStart time.Time
+	if doLog {
+		payloadStart = time.Now()
 	}
 
 	pf = payloadFormat(p.header[0])
 	length := binary.BigEndian.Uint32(p.header[1:])
 
 	if length == 0 {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg length 0 time %s", time.Now().Sub(payloadStart)))
+		}
+
 		return pf, nil, nil
 	}
 	if int64(length) > int64(maxInt) {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg length > maxInt time %s", time.Now().Sub(payloadStart)))
+		}
 		return 0, nil, status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max length allowed on current machine (%d vs. %d)", length, maxInt)
 	}
 	if int(length) > maxReceiveMessageSize {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg length > maxReceiveMessageSize time %s", time.Now().Sub(payloadStart)))
+		}
 		return 0, nil, status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max (%d vs. %d)", length, maxReceiveMessageSize)
 	}
+	var bufGetStart time.Time
+	if doLog {
+		bufGetStart = time.Now()
+	}
 	msg = p.recvBufferPool.Get(int(length))
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg buffer pool get time %s", time.Now().Sub(bufGetStart)))
+	}
+	var msgReadStart time.Time
+	if strings.Contains(readerString, "UpdateLog") {
+		msgReadStart = time.Now()
+	}
 	if _, err := p.r.Read(msg); err != nil {
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg err golang read time %s compression mode %d", time.Now().Sub(msgReadStart), pf))
+			fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg total time %s", time.Now().Sub(startTime)))
+		}
 		return 0, nil, err
+	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg no err golang read time %s compression mode %d", time.Now().Sub(msgReadStart), pf))
+		fmt.Println(fmt.Sprintf("GGMGGM5 rpc_util.go recvMsg msg total time %s", time.Now().Sub(startTime)))
 	}
 	return pf, msg, nil
 }
@@ -727,6 +774,14 @@ type payloadInfo struct {
 }
 
 func recvAndDecompress(p *parser, s *transport.Stream, dc Decompressor, maxReceiveMessageSize int, payInfo *payloadInfo, compressor encoding.Compressor) ([]byte, error) {
+	var readerString string
+	doLog := false
+	if p != nil && p.r != nil {
+		readerString = fmt.Sprintf("%#v", p.r)
+	}
+	if strings.Contains(readerString, "UpdateLog") {
+		doLog = true
+	}
 	pf, buf, err := p.recvMsg(maxReceiveMessageSize)
 	if err != nil {
 		return nil, err
@@ -735,8 +790,18 @@ func recvAndDecompress(p *parser, s *transport.Stream, dc Decompressor, maxRecei
 		payInfo.compressedLength = len(buf)
 	}
 
+	var checkRecvStart time.Time
+	if doLog {
+		checkRecvStart = time.Now()
+	}
 	if st := checkRecvPayload(pf, s.RecvCompress(), compressor != nil || dc != nil); st != nil {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM7 rpc_util.go recvAndDecompress check payload error time spent %s", time.Now().Sub(checkRecvStart)))
+		}
 		return nil, st.Err()
+	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM7 rpc_util.go recvAndDecompress check payload no error time spent %s compression mode %d", time.Now().Sub(checkRecvStart), pf))
 	}
 
 	var size int
@@ -793,17 +858,50 @@ func decompress(compressor encoding.Compressor, d []byte, maxReceiveMessageSize 
 // dc takes precedence over compressor.
 // TODO(dfawley): wrap the old compressor/decompressor using the new API?
 func recv(p *parser, c baseCodec, s *transport.Stream, dc Decompressor, m any, maxReceiveMessageSize int, payInfo *payloadInfo, compressor encoding.Compressor) error {
+	var startTime time.Time
+	var readerString string
+	doLog := false
+	if p != nil && p.r != nil {
+		readerString = fmt.Sprintf("%#v", p.r)
+	}
+	if strings.Contains(readerString, "UpdateLog") {
+		doLog = true
+		startTime = time.Now()
+	}
 	buf, err := recvAndDecompress(p, s, dc, maxReceiveMessageSize, payInfo, compressor)
 	if err != nil {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM6 rpc_util.go recv recvAndDecompress err time spent %s", time.Now().Sub(startTime)))
+		}
 		return err
 	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM6 rpc_util.go recv recvAndDecompress no err time spent %s", time.Now().Sub(startTime)))
+	}
+	var marshalStart time.Time
+	if doLog {
+		marshalStart = time.Now()
+	}
 	if err := c.Unmarshal(buf, m); err != nil {
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM6 rpc_util.go recv Unmarshall err time spent %s", time.Now().Sub(marshalStart)))
+		}
 		return status.Errorf(codes.Internal, "grpc: failed to unmarshal the received message: %v", err)
+	}
+	if doLog {
+		fmt.Println(fmt.Sprintf("GGMGGM6 rpc_util.go recv Unmarshall no err time spent %s", time.Now().Sub(marshalStart)))
 	}
 	if payInfo != nil {
 		payInfo.uncompressedBytes = buf
 	} else {
+		var bufPoolStart time.Time
+		if doLog {
+			bufPoolStart = time.Now()
+		}
 		p.recvBufferPool.Put(&buf)
+		if doLog {
+			fmt.Println(fmt.Sprintf("GGMGGM6 rpc_util.go recv buf pool Put time spent %s", time.Now().Sub(bufPoolStart)))
+		}
 	}
 	return nil
 }
