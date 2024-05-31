@@ -135,11 +135,9 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
-			authStart := time.Now()
 			if err := s.auth.Check(srv.Context(), parent, auth.ResourceLogs, auth.PermissionUpdate); err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
-			s.logger.Infof("GGM3 RBAC check kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(authStart).String())
 		}
 		if name != recv.GetName() {
 			err := fmt.Errorf("cannot put logs for multiple records in the same server")
@@ -151,28 +149,22 @@ func (s *Server) UpdateLog(srv pb.Logs_UpdateLogServer) error {
 		}
 
 		if rec == nil {
-			recStart := time.Now()
 			rec, err = getRecord(s.db.WithContext(srv.Context()), parent, resultName, recordName)
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
-			s.logger.Infof("GGM4 get record kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(recStart).String())
 		}
 
 		if stream == nil {
-			createStreamStart := time.Now()
 			stream, object, err = log.ToStream(srv.Context(), rec, s.config)
 			if err != nil {
 				return s.handleReturn(srv, rec, object, bytesWritten, err)
 			}
-			s.logger.Infof("GGM5 create stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(createStreamStart).String())
 		}
 
-		readStart := time.Now()
 		buffer := bytes.NewBuffer(recv.GetData())
 		written, err := stream.ReadFrom(buffer)
 		bytesWritten += written
-		s.logger.Infof("GGM6 read stream kind %s ns %s name %s time spent %s", obj.Kind, obj.Namespace, obj.Name, time.Now().Sub(readStart).String())
 
 		if err != nil {
 			return s.handleReturn(srv, rec, object, bytesWritten, err)
