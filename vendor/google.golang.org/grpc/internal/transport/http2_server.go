@@ -608,9 +608,14 @@ func (t *http2Server) operateHeaders(ctx context.Context, frame *http2.MetaHeade
 // typically run in a separate goroutine.
 // traceCtx attaches trace to ctx and returns the new context.
 func (t *http2Server) HandleStreams(ctx context.Context, handle func(*Stream)) {
+	//startTime := time.Now()
 	defer func() {
 		<-t.loopyWriterDone
 		close(t.readerDone)
+		//duration := time.Now().Sub(startTime)
+		//if duration.Seconds() > 10 {
+		//	fmt.Println(fmt.Sprintf("GGMGGM15 httpsServer HandleStreams %s", duration.Seconds()))
+		//}
 	}()
 	for {
 		t.controlBuf.throttle()

@@ -525,6 +525,9 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 	// reconciliation in this controller
 
 	startTime := time.Now()
+	defer func() {
+		logger.Infof("GGM streamLogs duration %s", time.Now().Sub(startTime).String())
+	}()
 
 	reader, err := tknlog.NewReader(logType, &tknopts.LogOptions{
 		AllSteps:        true,
@@ -544,10 +547,10 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 		return fmt.Errorf("error reading from tkn reader: %w", err)
 	}
 
-	logger.Infof("GGM2 tkn read obj kind %s obj ns %s obj name %s times spent %s",
-		o.GetObjectKind().GroupVersionKind().Kind, o.GetNamespace(), o.GetName(), time.Now().Sub(startTime).String())
+	//logger.Infof("GGM2 tkn read obj kind %s obj ns %s obj name %s times spent %s",
+	//	o.GetObjectKind().GroupVersionKind().Kind, o.GetNamespace(), o.GetName(), time.Now().Sub(startTime).String())
 
-	tknWriteStart := time.Now()
+	//tknWriteStart := time.Now()
 
 	tknlog.NewWriter(logType, true).Write(&cli.Stream{
 		Out: inMemWriteBufferStdout,
@@ -561,8 +564,8 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 		return fmt.Errorf("error occurred while calling tkn client write: %w", chanErr)
 	}
 
-	logger.Infof("GGM3 tkn write obj kind %s obj ns %s obj name %s times spent %s",
-		o.GetObjectKind().GroupVersionKind().Kind, o.GetNamespace(), o.GetName(), time.Now().Sub(tknWriteStart).String())
+	//logger.Infof("GGM3 tkn write obj kind %s obj ns %s obj name %s times spent %s",
+	//	o.GetObjectKind().GroupVersionKind().Kind, o.GetNamespace(), o.GetName(), time.Now().Sub(tknWriteStart).String())
 
 	bufStdout := inMemWriteBufferStdout.Bytes()
 	cntStdout, writeStdOutErr := writer.Write(bufStdout)
