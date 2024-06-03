@@ -370,6 +370,13 @@ func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
 }
 
 func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream func(*Stream)) {
+	startTime := time.Now()
+	defer func() {
+		duration := time.Now().Sub(startTime)
+		if duration.Seconds() > 10 {
+			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams %s", duration.String()))
+		}
+	}()
 	// With this transport type there will be exactly 1 stream: this HTTP request.
 	var cancel context.CancelFunc
 	if ht.timeoutSet {
@@ -412,12 +419,26 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// readerDone is closed when the Body.Read-ing goroutine exits.
 	readerDone := make(chan struct{})
 	go func() {
-		defer close(readerDone)
+		count := 0
+		readStartTime := time.Now()
+		defer func() {
+			close(readerDone)
+			duration := time.Now().Sub(readStartTime)
+			if duration.Seconds() > 10 {
+				fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream read loop count %d time %s", count, duration.String()))
+			}
+		}()
 
 		// TODO: minimize garbage, optimize recvBuffer code/ownership
 		const readSize = 8196
 		for buf := make([]byte, readSize); ; {
+			count++
+			httpReadStart := time.Now()
 			n, err := req.Body.Read(buf)
+			httpReadDuration := time.Now().Sub(httpReadStart)
+			if httpReadDuration.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter count %d time %s req obj %#v", count, httpReadDuration.String(), req))
+			}
 			if n > 0 {
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
 				buf = buf[n:]
@@ -426,8 +447,13 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 				s.buf.put(recvMsg{err: mapRecvMsgError(err)})
 				return
 			}
+			allocBufStart := time.Now()
 			if len(buf) == 0 {
 				buf = make([]byte, readSize)
+			}
+			allocBufDuration := time.Now().Sub(allocBufStart)
+			if allocBufDuration.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop make buf single iter count %d time %s", count, httpReadDuration.String()))
 			}
 		}
 	}()
@@ -436,9 +462,19 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// It starts a goroutine serving s and exits immediately.
 	// The goroutine that is started is the one that then calls
 	// into ht, calling WriteHeader, Write, WriteStatus, Close, etc.
+	//startStreamStart := time.Now()
 	startStream(s)
+	//startStreamDuration := time.Now().Sub(startStreamStart)
+	//if startStreamDuration.Seconds() > 10 {
+	//	fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream startStream  %s", startStreamDuration.String()))
+	//}
 
+	//runStreamStart := time.Now()
 	ht.runStream()
+	//runStreamDuration := time.Now().Sub(runStreamStart)
+	//if runStreamDuration.Seconds() > 10 {
+	//	fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream runStream  %s", runStreamDuration.String()))
+	//}
 	close(requestOver)
 
 	// Wait for reading goroutine to finish.
