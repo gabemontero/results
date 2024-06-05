@@ -372,9 +372,10 @@ func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
 func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream func(*Stream)) {
 	startTime := time.Now()
 	defer func() {
-		duration := time.Now().Sub(startTime)
+		endTime := time.Now()
+		duration := endTime.Sub(startTime)
 		if duration.Seconds() > 10 {
-			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams %s", duration.String()))
+			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams %s ts %d.%09d", duration.String(), endTime.Unix(), endTime.Nanosecond()))
 		}
 	}()
 	// With this transport type there will be exactly 1 stream: this HTTP request.
@@ -423,9 +424,10 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 		readStartTime := time.Now()
 		defer func() {
 			close(readerDone)
-			duration := time.Now().Sub(readStartTime)
+			readEndTime := time.Now()
+			duration := readEndTime.Sub(readStartTime)
 			if duration.Seconds() > 10 {
-				fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream read loop count %d time %s", count, duration.String()))
+				fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream read loop count %d time %s ts %d.%09d", count, duration.String(), readEndTime.Unix(), readEndTime.Nanosecond()))
 			}
 		}()
 
@@ -435,9 +437,10 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 			count++
 			httpReadStart := time.Now()
 			n, err := req.Body.Read(buf)
-			httpReadDuration := time.Now().Sub(httpReadStart)
+			httpReadEnd := time.Now()
+			httpReadDuration := httpReadEnd.Sub(httpReadStart)
 			if httpReadDuration.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter count %d time %s req obj %#v", count, httpReadDuration.String(), req))
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter count %d time %s ts %d.%09d req obj %#v", count, httpReadDuration.String(), httpReadEnd.Unix(), httpReadEnd.Nanosecond(), req))
 			}
 			if n > 0 {
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
@@ -453,7 +456,7 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 			}
 			allocBufDuration := time.Now().Sub(allocBufStart)
 			if allocBufDuration.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop make buf single iter count %d time %s", count, httpReadDuration.String()))
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop make buf single iter count %d time %s ts %d.%09d", count, httpReadDuration.String()))
 			}
 		}
 	}()
