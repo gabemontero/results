@@ -1012,7 +1012,13 @@ func (s *Server) serveStreams(ctx context.Context, st transport.ServerTransport,
 	st.HandleStreams(ctx, func(stream *transport.Stream) {
 		// GGMGGM this is the startStream(s) call from HandleStreams
 		// GGMGGM more mutex level activity ; this is the thread pool stuff, all this set, the default max is suppose to be max uint32, so we should not have to wait.
+		startTime1 := time.Now()
 		streamQuota.acquire()
+		endTime1 := time.Now()
+		duration1 := endTime1.Sub(startTime1)
+		if duration1.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM32 Server startStream acquire quota semaphore %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+		}
 		f := func() {
 			defer streamQuota.release()
 			s.handleStream(st, stream)
@@ -1721,6 +1727,14 @@ func (s *Server) processStreamingRPC(ctx context.Context, t transport.ServerTran
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Stream) {
 	// GGMGGM we land here from startStream(s) in HandleStreams
 	// GGMGGM possible tuning spot for next runs with Pavel
+	startTime1 := time.Now()
+	defer func() {
+		endTime1 := time.Now()
+		duration1 := endTime1.Sub(startTime1)
+		if duration1.Seconds() > 10 {
+			fmt.Println(fmt.Sprintf("GGMGGM33 Server handleStream %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+		}
+	}()
 	ctx := stream.Context()
 	ctx = contextWithServer(ctx, s)
 	var ti *traceInfo

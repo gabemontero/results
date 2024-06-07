@@ -99,7 +99,6 @@ func newRecvBuffer() *recvBuffer {
 }
 
 func (b *recvBuffer) put(r recvMsg) {
-	startTime := time.Now()
 	b.mu.Lock()
 	if b.err != nil {
 		b.mu.Unlock()
@@ -118,14 +117,9 @@ func (b *recvBuffer) put(r recvMsg) {
 	}
 	b.backlog = append(b.backlog, r)
 	b.mu.Unlock()
-	duration := time.Now().Sub(startTime)
-	if duration.Seconds() > 3 {
-		fmt.Println(fmt.Sprintf("GGMGGM13 recvBuffer put %s", duration.String()))
-	}
 }
 
 func (b *recvBuffer) load() {
-	startTime := time.Now()
 	b.mu.Lock()
 	if len(b.backlog) > 0 {
 		select {
@@ -136,10 +130,6 @@ func (b *recvBuffer) load() {
 		}
 	}
 	b.mu.Unlock()
-	duration := time.Now().Sub(startTime)
-	if duration.Seconds() > 3 {
-		fmt.Println(fmt.Sprintf("GGMGGM13 recvBuffer load %s", duration.String()))
-	}
 }
 
 // get returns the channel that receives a recvMsg in the buffer.
@@ -169,7 +159,6 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	//startTime := time.Now()
 	if r.last != nil {
 		// Read remaining data left in last call.
 		copied, _ := r.last.Read(p)
@@ -177,10 +166,6 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 			r.freeBuffer(r.last)
 			r.last = nil
 		}
-		//lastDuration := time.Now().Sub(startTime)
-		//if lastDuration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM10 transport.go recvBufferReader Read last time spent %s", lastDuration.String()))
-		//}
 		return copied, nil
 	}
 	if r.closeStream != nil {
@@ -188,27 +173,14 @@ func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 	} else {
 		n, r.err = r.read(p)
 	}
-	//duration := time.Now().Sub(startTime)
-	//if duration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM10 transport.go recvBufferReader Read time spent %s", duration.String()))
-	//}
 	return n, r.err
 }
 
 func (r *recvBufferReader) read(p []byte) (n int, err error) {
-	//startTime := time.Now()
 	select {
 	case <-r.ctxDone:
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM14 recvBufferReader read ctx done %s", duration.String()))
-		//}
 		return 0, ContextErr(r.ctx.Err())
 	case m := <-r.recv.get():
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM14 recvBufferReader read get %s", duration.String()))
-		//}
 		return r.readAdditional(m, p)
 	}
 }
@@ -217,7 +189,6 @@ func (r *recvBufferReader) readClient(p []byte) (n int, err error) {
 	// If the context is canceled, then closes the stream with nil metadata.
 	// closeStream writes its error parameter to r.recv as a recvMsg.
 	// r.readAdditional acts on that message and returns the necessary error.
-	//startTime := time.Now()
 	select {
 	case <-r.ctxDone:
 		// Note that this adds the ctx error to the end of recv buffer, and
@@ -235,22 +206,13 @@ func (r *recvBufferReader) readClient(p []byte) (n int, err error) {
 		// faster.
 		r.closeStream(ContextErr(r.ctx.Err()))
 		m := <-r.recv.get()
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM11 recvBufferReader readClient ctx done %s", duration.String()))
-		//}
 		return r.readAdditional(m, p)
 	case m := <-r.recv.get():
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM11 recvBufferReader readClient get return %s", duration.String()))
-		//}
 		return r.readAdditional(m, p)
 	}
 }
 
 func (r *recvBufferReader) readAdditional(m recvMsg, p []byte) (n int, err error) {
-	//startTime := time.Now()
 	r.recv.load()
 	if m.err != nil {
 		//duration := time.Now().Sub(startTime)
@@ -266,10 +228,6 @@ func (r *recvBufferReader) readAdditional(m recvMsg, p []byte) (n int, err error
 	} else {
 		r.last = m.buffer
 	}
-	//duration := time.Now().Sub(startTime)
-	//if duration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM12 recvBufferReader readAdditional return %s", duration.String()))
-	//}
 	return copied, nil
 }
 

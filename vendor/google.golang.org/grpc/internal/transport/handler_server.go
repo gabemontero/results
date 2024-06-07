@@ -223,8 +223,16 @@ func (ht *serverHandlerTransport) do(fn func()) error {
 }
 
 func (ht *serverHandlerTransport) WriteStatus(s *Stream, st *status.Status) error {
+	startTime1 := time.Now()
 	ht.writeStatusMu.Lock()
-	defer ht.writeStatusMu.Unlock()
+	defer func() {
+		ht.writeStatusMu.Unlock()
+		endTime1 := time.Now()
+		duration1 := endTime1.Sub(startTime1)
+		if duration1.Seconds() > 10 {
+			fmt.Println(fmt.Sprintf("GGMGGM31 serverHandlerTransport WriteStatus %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+		}
+	}()
 
 	headersWritten := s.updateHeaderSent()
 	err := ht.do(func() {
@@ -334,33 +342,99 @@ func (ht *serverHandlerTransport) writeCustomHeaders(s *Stream) {
 
 func (ht *serverHandlerTransport) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
 	// GGMGGM another potential sync point on ht.runStream()
+	startTime1 := time.Now()
 	headersWritten := s.updateHeaderSent()
+	endTime1 := time.Now()
+	duration1 := endTime1.Sub(startTime1)
+	if duration1.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM21 serverHandlerTransport Write updateHeaderSent %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+	}
 	return ht.do(func() {
 		if !headersWritten {
+			startTime2 := time.Now()
 			ht.writePendingHeaders(s)
+			endTime2 := time.Now()
+			duration2 := endTime2.Sub(startTime2)
+			if duration2.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM22 serverHandlerTransport Write do writePendingHeaders %s ts %d.%09d", duration2.String(), endTime2.Unix(), endTime2.Nanosecond()))
+			}
 		}
+		startTime3 := time.Now()
 		ht.rw.Write(hdr)
+		endTime3 := time.Now()
+		duration3 := endTime3.Sub(startTime3)
+		if duration3.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM23 serverHandlerTransport Write do Write hdr %s ts %d.%09d", duration3.String(), endTime3.Unix(), endTime3.Nanosecond()))
+		}
+		startTime4 := time.Now()
 		ht.rw.Write(data)
+		endTime4 := time.Now()
+		duration4 := endTime4.Sub(startTime4)
+		if duration4.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM24 serverHandlerTransport Write do Write data %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
+		}
+		startTime5 := time.Now()
 		ht.rw.(http.Flusher).Flush()
+		endTime5 := time.Now()
+		duration5 := endTime5.Sub(startTime5)
+		if duration5.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport Write do Write data %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
+		}
 	})
 }
 
 func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
+	startTime1 := time.Now()
 	if err := s.SetHeader(md); err != nil {
+		endTime1 := time.Now()
+		duration1 := endTime1.Sub(startTime1)
+		if duration1.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport WriteHeader SetHeader err %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+		}
 		return err
 	}
+	endTime1 := time.Now()
+	duration1 := endTime1.Sub(startTime1)
+	if duration1.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport WriteHeader SetHeader %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
+	}
 
+	startTime2 := time.Now()
 	headersWritten := s.updateHeaderSent()
+	endTime2 := time.Now()
+	duration2 := endTime2.Sub(startTime2)
+	if duration2.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM26 serverHandlerTransport WriteHeader updateHeaderSent %s ts %d.%09d", duration2.String(), endTime2.Unix(), endTime2.Nanosecond()))
+	}
 	err := ht.do(func() {
 		if !headersWritten {
+			startTime3 := time.Now()
 			ht.writePendingHeaders(s)
+			endTime3 := time.Now()
+			duration3 := endTime3.Sub(startTime3)
+			if duration3.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM27 serverHandlerTransport WriteHeader do writePendingHeaders %s ts %d.%09d", duration3.String(), endTime3.Unix(), endTime3.Nanosecond()))
+			}
 		}
 
+		startTime4 := time.Now()
 		ht.rw.WriteHeader(200)
+		endTime4 := time.Now()
+		duration4 := endTime4.Sub(startTime4)
+		if duration4.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM28 serverHandlerTransport WriteHeader do WriteHeader %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
+		}
+		startTime5 := time.Now()
 		ht.rw.(http.Flusher).Flush()
+		endTime5 := time.Now()
+		duration5 := endTime5.Sub(startTime5)
+		if duration5.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM29 serverHandlerTransport WriteHeader do Flush %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
+		}
 	})
 
 	if err == nil {
+		startTime6 := time.Now()
 		for _, sh := range ht.stats {
 			// Note: The header fields are compressed with hpack after this call returns.
 			// No WireLength field is set here.
@@ -368,6 +442,11 @@ func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
 				Header:      md.Copy(),
 				Compression: s.sendCompress,
 			})
+		}
+		endTime6 := time.Now()
+		duration6 := endTime6.Sub(startTime6)
+		if duration6.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM30 serverHandlerTransport WriteHeader do writePendingHeaders %s ts %d.%09d", duration6.String(), endTime6.Unix(), endTime6.Nanosecond()))
 		}
 	}
 	return err
@@ -454,13 +533,8 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 				s.buf.put(recvMsg{err: mapRecvMsgError(err)})
 				return
 			}
-			allocBufStart := time.Now()
 			if len(buf) == 0 {
 				buf = make([]byte, readSize)
-			}
-			allocBufDuration := time.Now().Sub(allocBufStart)
-			if allocBufDuration.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop make buf single iter count %d time %s ts %d.%09d", count, httpReadDuration.String()))
 			}
 		}
 	}()
@@ -469,19 +543,21 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// It starts a goroutine serving s and exits immediately.
 	// The goroutine that is started is the one that then calls
 	// into ht, calling WriteHeader, Write, WriteStatus, Close, etc.
-	//startStreamStart := time.Now()
+	startStreamStart := time.Now()
 	startStream(s)
-	//startStreamDuration := time.Now().Sub(startStreamStart)
-	//if startStreamDuration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream startStream  %s", startStreamDuration.String()))
-	//}
+	streamStartEnd := time.Now()
+	startStreamDuration := streamStartEnd.Sub(startStreamStart)
+	if startStreamDuration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM19 HandleStream startStream %s ts %d.%09d", startStreamDuration.String(), streamStartEnd.Unix(), streamStartEnd.Nanosecond()))
+	}
 
-	//runStreamStart := time.Now()
+	runStreamStart := time.Now()
 	ht.runStream()
-	//runStreamDuration := time.Now().Sub(runStreamStart)
-	//if runStreamDuration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream runStream  %s", runStreamDuration.String()))
-	//}
+	runStreamEnd := time.Now()
+	runStreamDuration := runStreamEnd.Sub(runStreamStart)
+	if runStreamDuration.Seconds() > 10 {
+		fmt.Println(fmt.Sprintf("GGMGGM20 HandleStream runStream %s ts %d.%09d", runStreamDuration.String(), runStreamEnd.Unix(), runStreamEnd.Nanosecond()))
+	}
 	close(requestOver)
 
 	// Wait for reading goroutine to finish.

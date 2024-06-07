@@ -612,10 +612,6 @@ func (t *http2Server) HandleStreams(ctx context.Context, handle func(*Stream)) {
 	defer func() {
 		<-t.loopyWriterDone
 		close(t.readerDone)
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM15 httpsServer HandleStreams %s", duration.Seconds()))
-		//}
 	}()
 	for {
 		t.controlBuf.throttle()
