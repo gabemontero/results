@@ -5,7 +5,6 @@ package grpc_ctxtags
 
 import (
 	"context"
-	//"fmt"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
@@ -30,7 +29,6 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	o := evaluateOptions(opts)
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		newCtx := newTagsForCtx(stream.Context())
-		//fmt.Println(fmt.Sprintf("GGMGGM3 interceptors.go passing stream %#v to wrapper", stream))
 		if o.requestFieldsFunc == nil {
 			// Short-circuit, don't do the expensive bit of allocating a wrappedStream.
 			wrappedStream := grpc_middleware.WrapServerStream(stream)
@@ -59,7 +57,6 @@ func (w *wrappedStream) Context() context.Context {
 }
 
 func (w *wrappedStream) RecvMsg(m interface{}) error {
-	//fmt.Println(fmt.Sprintf("GGMGGM3 interceptors.go wrappedStream RecvMesg %#v calling server stream %#v", m, w.ServerStream))
 	err := w.ServerStream.RecvMsg(m)
 	// We only do log fields extraction on the single-request of a server-side stream.
 	if !w.info.IsClientStream || w.opts.requestFieldsFromInitial && w.initial {

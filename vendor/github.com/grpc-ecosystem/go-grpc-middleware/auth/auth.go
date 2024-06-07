@@ -5,7 +5,6 @@ package grpc_auth
 
 import (
 	"context"
-	//"fmt"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware"
 	"google.golang.org/grpc"
@@ -54,7 +53,6 @@ func StreamServerInterceptor(authFunc AuthFunc) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		var newCtx context.Context
 		var err error
-		//fmt.Println(fmt.Sprintf("GGMGGM1 auth.go passing stream %#v to wrapper", stream))
 		if overrideSrv, ok := srv.(ServiceAuthFuncOverride); ok {
 			newCtx, err = overrideSrv.AuthFuncOverride(stream.Context(), info.FullMethod)
 		} else {
