@@ -454,11 +454,12 @@ func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
 
 func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream func(*Stream)) {
 	startTime := time.Now()
+	totalSize := 0
 	defer func() {
 		endTime := time.Now()
 		duration := endTime.Sub(startTime)
 		if duration.Seconds() > 10 {
-			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams %s ts %d.%09d", duration.String(), endTime.Unix(), endTime.Nanosecond()))
+			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams time spent %s ts %d.%09d totalSize %d", duration.String(), endTime.Unix(), endTime.Nanosecond(), totalSize))
 		}
 	}()
 	// With this transport type there will be exactly 1 stream: this HTTP request.
@@ -520,6 +521,7 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 			count++
 			httpReadStart := time.Now()
 			n, err := req.Body.Read(buf)
+			totalSize = totalSize + n
 			httpReadEnd := time.Now()
 			httpReadDuration := httpReadEnd.Sub(httpReadStart)
 			if httpReadDuration.Seconds() > 3 {
