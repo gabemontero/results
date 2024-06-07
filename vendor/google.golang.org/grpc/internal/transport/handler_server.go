@@ -213,6 +213,7 @@ func (a strAddr) String() string { return string(a) }
 
 // do runs fn in the ServeHTTP goroutine.
 func (ht *serverHandlerTransport) do(fn func()) error {
+	// GGMGGM this is the connector to ht.runStream ... examining the calls to this uncover lock usage as part of HandleStream
 	select {
 	case <-ht.closedCh:
 		return ErrConnClosing
@@ -242,6 +243,7 @@ func (ht *serverHandlerTransport) WriteStatus(s *Stream, st *status.Status) erro
 			h.Set("Grpc-Message", encodeGrpcMessage(m))
 		}
 
+		// GGMGGM another potential sync point on ht.writeStream
 		s.hdrMu.Lock()
 		if p := st.Proto(); p != nil && len(p.Details) > 0 {
 			delete(s.trailer, grpcStatusDetailsBinHeader)
@@ -316,6 +318,7 @@ func (ht *serverHandlerTransport) writeCommonHeaders(s *Stream) {
 func (ht *serverHandlerTransport) writeCustomHeaders(s *Stream) {
 	h := ht.rw.Header()
 
+	// GGMGGM one potential throttling point from ht.runStream()
 	s.hdrMu.Lock()
 	for k, vv := range s.header {
 		if isReservedHeader(k) {
@@ -330,6 +333,7 @@ func (ht *serverHandlerTransport) writeCustomHeaders(s *Stream) {
 }
 
 func (ht *serverHandlerTransport) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
+	// GGMGGM another potential sync point on ht.runStream()
 	headersWritten := s.updateHeaderSent()
 	return ht.do(func() {
 		if !headersWritten {
