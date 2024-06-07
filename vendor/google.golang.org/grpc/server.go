@@ -1010,6 +1010,8 @@ func (s *Server) serveStreams(ctx context.Context, st transport.ServerTransport,
 
 	streamQuota := newHandlerQuota(s.opts.maxConcurrentStreams)
 	st.HandleStreams(ctx, func(stream *transport.Stream) {
+		// GGMGGM this is the startStream(s) call from HandleStreams
+		// GGMGGM more mutex level activity ; this is the thread pool stuff, all this set, the default max is suppose to be max uint32, so we should not have to wait.
 		streamQuota.acquire()
 		f := func() {
 			defer streamQuota.release()
@@ -1717,6 +1719,8 @@ func (s *Server) processStreamingRPC(ctx context.Context, t transport.ServerTran
 }
 
 func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Stream) {
+	// GGMGGM we land here from startStream(s) in HandleStreams
+	// GGMGGM possible tuning spot for next runs with Pavel
 	ctx := stream.Context()
 	ctx = contextWithServer(ctx, s)
 	var ti *traceInfo
