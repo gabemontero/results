@@ -600,6 +600,7 @@ func (p *parser) recvMsg(maxReceiveMessageSize int) (pf payloadFormat, msg []byt
 	if _, err := p.r.Read(p.header[:]); err != nil {
 		return 0, nil, err
 	}
+
 	pf = payloadFormat(p.header[0])
 	length := binary.BigEndian.Uint32(p.header[1:])
 
@@ -734,10 +735,6 @@ func recvAndDecompress(p *parser, s *transport.Stream, dc Decompressor, maxRecei
 		payInfo.compressedLength = len(buf)
 	}
 
-	//var checkRecvStart time.Time
-	//if doLog {
-	//	checkRecvStart = time.Now()
-	//}
 	if st := checkRecvPayload(pf, s.RecvCompress(), compressor != nil || dc != nil); st != nil {
 		return nil, st.Err()
 	}

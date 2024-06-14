@@ -1682,7 +1682,6 @@ func (ss *serverStream) SendMsg(m any) (err error) {
 }
 
 func (ss *serverStream) RecvMsg(m any) (err error) {
-
 	defer func() {
 		if ss.trInfo != nil {
 			ss.mu.Lock()

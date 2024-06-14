@@ -213,7 +213,6 @@ func (a strAddr) String() string { return string(a) }
 
 // do runs fn in the ServeHTTP goroutine.
 func (ht *serverHandlerTransport) do(fn func()) error {
-	// GGMGGM this is the connector to ht.runStream ... examining the calls to this uncover lock usage as part of HandleStream
 	select {
 	case <-ht.closedCh:
 		return ErrConnClosing
@@ -223,16 +222,8 @@ func (ht *serverHandlerTransport) do(fn func()) error {
 }
 
 func (ht *serverHandlerTransport) WriteStatus(s *Stream, st *status.Status) error {
-	startTime1 := time.Now()
 	ht.writeStatusMu.Lock()
-	defer func() {
-		ht.writeStatusMu.Unlock()
-		endTime1 := time.Now()
-		duration1 := endTime1.Sub(startTime1)
-		if duration1.Seconds() > 10 {
-			fmt.Println(fmt.Sprintf("GGMGGM31 serverHandlerTransport WriteStatus %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
-		}
-	}()
+	defer ht.writeStatusMu.Unlock()
 
 	headersWritten := s.updateHeaderSent()
 	err := ht.do(func() {
@@ -251,7 +242,6 @@ func (ht *serverHandlerTransport) WriteStatus(s *Stream, st *status.Status) erro
 			h.Set("Grpc-Message", encodeGrpcMessage(m))
 		}
 
-		// GGMGGM another potential sync point on ht.writeStream
 		s.hdrMu.Lock()
 		if p := st.Proto(); p != nil && len(p.Details) > 0 {
 			delete(s.trailer, grpcStatusDetailsBinHeader)
@@ -326,7 +316,6 @@ func (ht *serverHandlerTransport) writeCommonHeaders(s *Stream) {
 func (ht *serverHandlerTransport) writeCustomHeaders(s *Stream) {
 	h := ht.rw.Header()
 
-	// GGMGGM one potential throttling point from ht.runStream()
 	s.hdrMu.Lock()
 	for k, vv := range s.header {
 		if isReservedHeader(k) {
@@ -341,100 +330,33 @@ func (ht *serverHandlerTransport) writeCustomHeaders(s *Stream) {
 }
 
 func (ht *serverHandlerTransport) Write(s *Stream, hdr []byte, data []byte, opts *Options) error {
-	// GGMGGM another potential sync point on ht.runStream()
-	startTime1 := time.Now()
 	headersWritten := s.updateHeaderSent()
-	endTime1 := time.Now()
-	duration1 := endTime1.Sub(startTime1)
-	if duration1.Seconds() > 3 {
-		fmt.Println(fmt.Sprintf("GGMGGM21 serverHandlerTransport Write updateHeaderSent %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
-	}
 	return ht.do(func() {
 		if !headersWritten {
-			startTime2 := time.Now()
 			ht.writePendingHeaders(s)
-			endTime2 := time.Now()
-			duration2 := endTime2.Sub(startTime2)
-			if duration2.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM22 serverHandlerTransport Write do writePendingHeaders %s ts %d.%09d", duration2.String(), endTime2.Unix(), endTime2.Nanosecond()))
-			}
 		}
-		startTime3 := time.Now()
 		ht.rw.Write(hdr)
-		endTime3 := time.Now()
-		duration3 := endTime3.Sub(startTime3)
-		if duration3.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM23 serverHandlerTransport Write do Write hdr %s ts %d.%09d", duration3.String(), endTime3.Unix(), endTime3.Nanosecond()))
-		}
-		startTime4 := time.Now()
 		ht.rw.Write(data)
-		endTime4 := time.Now()
-		duration4 := endTime4.Sub(startTime4)
-		if duration4.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM24 serverHandlerTransport Write do Write data %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
-		}
-		startTime5 := time.Now()
 		ht.rw.(http.Flusher).Flush()
-		endTime5 := time.Now()
-		duration5 := endTime5.Sub(startTime5)
-		if duration5.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport Write do Write data %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
-		}
 	})
 }
 
 func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
-	startTime1 := time.Now()
 	if err := s.SetHeader(md); err != nil {
-		endTime1 := time.Now()
-		duration1 := endTime1.Sub(startTime1)
-		if duration1.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport WriteHeader SetHeader err %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
-		}
 		return err
 	}
-	endTime1 := time.Now()
-	duration1 := endTime1.Sub(startTime1)
-	if duration1.Seconds() > 3 {
-		fmt.Println(fmt.Sprintf("GGMGGM25 serverHandlerTransport WriteHeader SetHeader %s ts %d.%09d", duration1.String(), endTime1.Unix(), endTime1.Nanosecond()))
-	}
 
-	startTime2 := time.Now()
 	headersWritten := s.updateHeaderSent()
-	endTime2 := time.Now()
-	duration2 := endTime2.Sub(startTime2)
-	if duration2.Seconds() > 3 {
-		fmt.Println(fmt.Sprintf("GGMGGM26 serverHandlerTransport WriteHeader updateHeaderSent %s ts %d.%09d", duration2.String(), endTime2.Unix(), endTime2.Nanosecond()))
-	}
 	err := ht.do(func() {
 		if !headersWritten {
-			startTime3 := time.Now()
 			ht.writePendingHeaders(s)
-			endTime3 := time.Now()
-			duration3 := endTime3.Sub(startTime3)
-			if duration3.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM27 serverHandlerTransport WriteHeader do writePendingHeaders %s ts %d.%09d", duration3.String(), endTime3.Unix(), endTime3.Nanosecond()))
-			}
 		}
 
-		startTime4 := time.Now()
 		ht.rw.WriteHeader(200)
-		endTime4 := time.Now()
-		duration4 := endTime4.Sub(startTime4)
-		if duration4.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM28 serverHandlerTransport WriteHeader do WriteHeader %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
-		}
-		startTime5 := time.Now()
 		ht.rw.(http.Flusher).Flush()
-		endTime5 := time.Now()
-		duration5 := endTime5.Sub(startTime5)
-		if duration5.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM29 serverHandlerTransport WriteHeader do Flush %s ts %d.%09d", duration4.String(), endTime4.Unix(), endTime4.Nanosecond()))
-		}
 	})
 
 	if err == nil {
-		startTime6 := time.Now()
 		for _, sh := range ht.stats {
 			// Note: The header fields are compressed with hpack after this call returns.
 			// No WireLength field is set here.
@@ -443,25 +365,11 @@ func (ht *serverHandlerTransport) WriteHeader(s *Stream, md metadata.MD) error {
 				Compression: s.sendCompress,
 			})
 		}
-		endTime6 := time.Now()
-		duration6 := endTime6.Sub(startTime6)
-		if duration6.Seconds() > 3 {
-			fmt.Println(fmt.Sprintf("GGMGGM30 serverHandlerTransport WriteHeader do writePendingHeaders %s ts %d.%09d", duration6.String(), endTime6.Unix(), endTime6.Nanosecond()))
-		}
 	}
 	return err
 }
 
 func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream func(*Stream)) {
-	startTime := time.Now()
-	totalSize := 0
-	defer func() {
-		endTime := time.Now()
-		duration := endTime.Sub(startTime)
-		if duration.Seconds() > 10 {
-			fmt.Println(fmt.Sprintf("GGMGGM16 server handler HandleStreams time spent %s ts %d.%09d totalSize %d", duration.String(), endTime.Unix(), endTime.Nanosecond(), totalSize))
-		}
-	}()
 	// With this transport type there will be exactly 1 stream: this HTTP request.
 	var cancel context.CancelFunc
 	if ht.timeoutSet {
@@ -504,28 +412,17 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// readerDone is closed when the Body.Read-ing goroutine exits.
 	readerDone := make(chan struct{})
 	go func() {
-		count := 0
-		readStartTime := time.Now()
-		defer func() {
-			close(readerDone)
-			readEndTime := time.Now()
-			duration := readEndTime.Sub(readStartTime)
-			if duration.Seconds() > 10 {
-				fmt.Println(fmt.Sprintf("GGMGGM17 HandleStream read loop count %d time %s ts %d.%09d", count, duration.String(), readEndTime.Unix(), readEndTime.Nanosecond()))
-			}
-		}()
+		defer close(readerDone)
 
 		// TODO: minimize garbage, optimize recvBuffer code/ownership
 		const readSize = 8196
 		for buf := make([]byte, readSize); ; {
-			count++
 			httpReadStart := time.Now()
 			n, err := req.Body.Read(buf)
-			totalSize = totalSize + n
 			httpReadEnd := time.Now()
 			httpReadDuration := httpReadEnd.Sub(httpReadStart)
 			if httpReadDuration.Seconds() > 3 {
-				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter count %d time %s ts %d.%09d req obj %#v", count, httpReadDuration.String(), httpReadEnd.Unix(), httpReadEnd.Nanosecond(), req))
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter time %s ts %d.%09d req obj %#v", httpReadDuration.String(), httpReadEnd.Unix(), httpReadEnd.Nanosecond(), req))
 			}
 			if n > 0 {
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
@@ -545,21 +442,9 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// It starts a goroutine serving s and exits immediately.
 	// The goroutine that is started is the one that then calls
 	// into ht, calling WriteHeader, Write, WriteStatus, Close, etc.
-	startStreamStart := time.Now()
 	startStream(s)
-	streamStartEnd := time.Now()
-	startStreamDuration := streamStartEnd.Sub(startStreamStart)
-	if startStreamDuration.Seconds() > 10 {
-		fmt.Println(fmt.Sprintf("GGMGGM19 HandleStream startStream %s ts %d.%09d", startStreamDuration.String(), streamStartEnd.Unix(), streamStartEnd.Nanosecond()))
-	}
 
-	runStreamStart := time.Now()
 	ht.runStream()
-	runStreamEnd := time.Now()
-	runStreamDuration := runStreamEnd.Sub(runStreamStart)
-	if runStreamDuration.Seconds() > 10 {
-		fmt.Println(fmt.Sprintf("GGMGGM20 HandleStream runStream %s ts %d.%09d", runStreamDuration.String(), runStreamEnd.Unix(), runStreamEnd.Nanosecond()))
-	}
 	close(requestOver)
 
 	// Wait for reading goroutine to finish.

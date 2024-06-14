@@ -1,6 +1,6 @@
 module github.com/tektoncd/results
 
-go 1.19
+go 1.22
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.21.0
@@ -32,7 +32,7 @@ require (
 	go.uber.org/automaxprocs v1.5.2
 	go.uber.org/zap v1.25.0
 	gocloud.dev v0.27.0
-	golang.org/x/net v0.24.0
+	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.15.0
 	google.golang.org/api v0.155.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20231211222908-989df2bf70f3
@@ -211,12 +211,12 @@ require (
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.22.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20220823124025-807a23277127 // indirect
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/term v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/term v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect

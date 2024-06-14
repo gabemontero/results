@@ -215,10 +215,6 @@ func (r *recvBufferReader) readClient(p []byte) (n int, err error) {
 func (r *recvBufferReader) readAdditional(m recvMsg, p []byte) (n int, err error) {
 	r.recv.load()
 	if m.err != nil {
-		//duration := time.Now().Sub(startTime)
-		//if duration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM12 recvBufferReader readAdditional err %s", duration.String()))
-		//}
 		return 0, m.err
 	}
 	copied, _ := m.buffer.Read(p)
@@ -255,9 +251,7 @@ type Stream struct {
 	sendCompress string
 	buf          *recvBuffer
 	trReader     io.Reader
-	// GGM flow control related
 	fc           *inFlow
-	// GGM flow control related
 	wq           *writeQuota
 
 	// Holds compressor names passed in grpc-accept-encoding metadata from the
@@ -506,14 +500,8 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	if er := s.trReader.(*transportReader).er; er != nil {
 		return 0, er
 	}
-	//startTime := time.Now()
 	s.requestRead(len(p))
-	r, e := io.ReadFull(s.trReader, p)
-	//duration := time.Now().Sub(startTime)
-	//if duration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM8 transport.go Stream Read time spent %s", duration.String()))
-	//}
-	return r, e
+	return io.ReadFull(s.trReader, p)
 }
 
 // tranportReader reads all the data available for this Stream from the transport and
@@ -529,25 +517,12 @@ type transportReader struct {
 }
 
 func (t *transportReader) Read(p []byte) (n int, err error) {
-	//readFullStart := time.Now()
 	n, err = t.reader.Read(p)
-	//readFullDuration := time.Now().Sub(readFullStart)
 	if err != nil {
-		//if readFullDuration.Seconds() > 10 {
-		//	fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader err time spent %s", readFullDuration.String()))
-		//}
 		t.er = err
 		return
 	}
-	//if readFullDuration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader no err time spent %s", readFullDuration.String()))
-	//}
-	//callbackStart := time.Now()
 	t.windowHandler(n)
-	//callbackDuration := time.Now().Sub(callbackStart)
-	//if callbackDuration.Seconds() > 10 {
-	//	fmt.Println(fmt.Sprintf("GGMGGM9 transport.go transportReader callback time spent %s", callbackDuration.String()))
-	//}
 	return
 }
 
