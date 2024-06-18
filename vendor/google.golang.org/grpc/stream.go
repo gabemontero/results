@@ -21,6 +21,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -878,7 +879,13 @@ func (cs *clientStream) SendMsg(m any) (err error) {
 			// errors are converted to an io.EOF error in csAttempt.sendMsg; the real
 			// error will be returned from RecvMsg eventually in that case, or be
 			// retried.)
+			finishStart := time.Now()
 			cs.finish(err)
+			finishEnd := time.Now()
+			finishDuration := finishEnd.Sub(finishStart)
+			if finishDuration.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM1 finish time %s ts %d.%09d m %#v", finishDuration.String(), finishEnd.Unix(), finishEnd.Nanosecond(), m))
+			}
 		}
 	}()
 	if cs.sentLast {
@@ -889,7 +896,13 @@ func (cs *clientStream) SendMsg(m any) (err error) {
 	}
 
 	// load hdr, payload, data
+	prepareMsgStart := time.Now()
 	hdr, payload, data, err := prepareMsg(m, cs.codec, cs.cp, cs.comp)
+	prepareMsgEnd := time.Now()
+	prepareMsgDuration := prepareMsgEnd.Sub(prepareMsgStart)
+	if prepareMsgDuration.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM2 prepareMsg time %s ts %d.%09d m %#v", prepareMsgDuration.String(), prepareMsgEnd.Unix(), prepareMsgEnd.Nanosecond(), m))
+	}
 	if err != nil {
 		return err
 	}
@@ -899,22 +912,42 @@ func (cs *clientStream) SendMsg(m any) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", len(payload), *cs.callInfo.maxSendMessageSize)
 	}
 	op := func(a *csAttempt) error {
-		return a.sendMsg(m, hdr, payload, data)
+		sendMsgStart := time.Now()
+		err = a.sendMsg(m, hdr, payload, data)
+		sendMsgEnd := time.Now()
+		sendMsgDuration := sendMsgEnd.Sub(sendMsgStart)
+		if sendMsgDuration.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM3 sendMsg time %s ts %d.%09d m %#v", sendMsgDuration.String(), sendMsgEnd.Unix(), sendMsgEnd.Nanosecond(), m))
+		}
+		return err
 	}
+	withRetryBufferStart := time.Now()
 	err = cs.withRetry(op, func() { cs.bufferForRetryLocked(len(hdr)+len(payload), op) })
+	withRetryBufferEnd := time.Now()
+	withRetryBufferDuration := withRetryBufferEnd.Sub(withRetryBufferStart)
+	if withRetryBufferDuration.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM4 withRetry time %s ts %d.%09d m %#v", withRetryBufferDuration.String(), withRetryBufferEnd.Unix(), withRetryBufferEnd.Nanosecond(), m))
+	}
 	if len(cs.binlogs) != 0 && err == nil {
 		cm := &binarylog.ClientMessage{
 			OnClientSide: true,
 			Message:      data,
 		}
+		binLogStart := time.Now()
 		for _, binlog := range cs.binlogs {
 			binlog.Log(cs.ctx, cm)
+		}
+		binLogEnd := time.Now()
+		binLogDuration := binLogEnd.Sub(binLogStart)
+		if binLogDuration.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM5 binLog time %s ts %d.%09d m %#v", binLogDuration.String(), binLogEnd.Unix(), binLogEnd.Nanosecond(), m))
 		}
 	}
 	return err
 }
 
 func (cs *clientStream) RecvMsg(m any) error {
+	start := time.Now()
 	if len(cs.binlogs) != 0 && !cs.serverHeaderBinlogged {
 		// Call Header() to binary log header if it's not already logged.
 		cs.Header()
@@ -939,10 +972,23 @@ func (cs *clientStream) RecvMsg(m any) error {
 		// err != nil or non-server-streaming indicates end of stream.
 		cs.finish(err)
 	}
+	end := time.Now()
+	duration := end.Sub(start)
+	if duration.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM6 RecvMsg time %s ts %d.%09d m %#v", duration.String(), end.Unix(), end.Nanosecond(), m))
+	}
 	return err
 }
 
 func (cs *clientStream) CloseSend() error {
+	start := time.Now()
+	defer func() {
+		end := time.Now()
+		duration := end.Sub(start)
+		if duration.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM7 CloseSend time %s ts %d.%09d", duration.String(), end.Unix(), end.Nanosecond()))
+		}
+	}()
 	if cs.sentLast {
 		// TODO: return an error and finish the stream instead, due to API misuse?
 		return nil

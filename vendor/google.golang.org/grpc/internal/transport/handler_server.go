@@ -412,12 +412,20 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 	// readerDone is closed when the Body.Read-ing goroutine exits.
 	readerDone := make(chan struct{})
 	go func() {
+		count := 0
 		defer close(readerDone)
 
 		// TODO: minimize garbage, optimize recvBuffer code/ownership
 		const readSize = 8196
 		for buf := make([]byte, readSize); ; {
+			count++
+			httpReadStart := time.Now()
 			n, err := req.Body.Read(buf)
+			httpReadEnd := time.Now()
+			httpReadDuration := httpReadEnd.Sub(httpReadStart)
+			if httpReadDuration.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter count %d time %s ts %d.%09d req obj %#v", count, httpReadDuration.String(), httpReadEnd.Unix(), httpReadEnd.Nanosecond(), req))
+			}
 			if n > 0 {
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
 				buf = buf[n:]
