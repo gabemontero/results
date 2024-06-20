@@ -19,6 +19,8 @@ import (
 	"net"
 	"testing"
 
+	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
+
 	"github.com/tektoncd/results/pkg/api/server/config"
 	"github.com/tektoncd/results/pkg/api/server/logger"
 	"google.golang.org/grpc/credentials/insecure"
@@ -39,7 +41,8 @@ func NewResultsClient(t *testing.T, config *config.Config, opts ...server.Option
 	config.DB_ENABLE_AUTO_MIGRATION = true
 	config.LOGS_API = true
 	config.LOGS_TYPE = "File"
-	srv, err := server.New(config, logger.Get("info"), test.NewDB(t), opts...)
+	k8sclient := fakekubeclientset.NewSimpleClientset()
+	srv, err := server.New(config, logger.Get("info"), test.NewDB(t), k8sclient, opts...)
 	if err != nil {
 		t.Fatalf("Failed to create fake server: %v", err)
 	}

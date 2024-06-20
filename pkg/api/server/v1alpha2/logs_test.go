@@ -5,12 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	"io"
+	corev1 "k8s.io/api/core/v1"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	fakekubeclientset "k8s.io/client-go/kubernetes/fake"
 
 	"google.golang.org/genproto/googleapis/api/httpbody"
 
@@ -90,7 +94,7 @@ func TestGetLog(t *testing.T) {
 		LOGS_API:                 true,
 		LOGS_TYPE:                "File",
 		DB_ENABLE_AUTO_MIGRATION: true,
-	}, logger.Get("info"), test.NewDB(t))
+	}, logger.Get("info"), test.NewDB(t), fakekubeclientset.NewSimpleClientset())
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -172,7 +176,8 @@ func TestUpdateLog(t *testing.T) {
 		LOGS_API:                 true,
 		DB_ENABLE_AUTO_MIGRATION: true,
 	}
-	srv, err := New(c, logger.Get("info"), test.NewDB(t))
+	k8sclient := fakekubeclientset.NewSimpleClientset()
+	srv, err := New(c, logger.Get("info"), test.NewDB(t), k8sclient)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -205,6 +210,7 @@ func TestUpdateLog(t *testing.T) {
 					},
 					Spec: v1alpha2.LogSpec{
 						Resource: v1alpha2.Resource{
+							Kind:      "TaskRun",
 							Namespace: "foo",
 							Name:      "baz",
 						},
@@ -223,10 +229,32 @@ func TestUpdateLog(t *testing.T) {
 		t.Fatalf("CreateRecord: %v", err)
 	}
 
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "baz-pod",
+			Namespace: "foo",
+			Labels: map[string]string{
+				pipeline.TaskRunLabelKey: "baz",
+				pipeline.TaskLabelKey:    "baz",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "c1",
+				},
+			},
+		},
+	}
+	_, err = k8sclient.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("%s", err.Error())
+	}
+
 	mock := &mockUpdateLogServer{
 		ctx:       ctx,
 		record:    rec,
-		logStream: []string{"Hello world! ", "This is Tekton Results."},
+		logStream: []string{"ignored-data"},
 	}
 	err = srv.UpdateLog(mock)
 	if err != nil {
@@ -236,7 +264,7 @@ func TestUpdateLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read data from file: %v", err)
 	}
-	expectedData := "Hello world! This is Tekton Results."
+	expectedData := "[c1] fake logs\n"
 	if expectedData != string(actualData) {
 		t.Errorf("expected to have received %q, got %q", expectedData, actualData)
 	}
@@ -251,7 +279,7 @@ func TestListLogs(t *testing.T) {
 		LOGS_API:                 true,
 		LOGS_TYPE:                "File",
 		DB_ENABLE_AUTO_MIGRATION: true,
-	}, logger.Get("info"), test.NewDB(t))
+	}, logger.Get("info"), test.NewDB(t), fakekubeclientset.NewSimpleClientset())
 	if err != nil {
 		t.Fatalf("failed to setup db: %v", err)
 	}
@@ -509,7 +537,7 @@ func TestListLogs_multiresult(t *testing.T) {
 		LOGS_API:                 true,
 		LOGS_TYPE:                "File",
 		DB_ENABLE_AUTO_MIGRATION: true,
-	}, logger.Get("info"), test.NewDB(t))
+	}, logger.Get("info"), test.NewDB(t), fakekubeclientset.NewSimpleClientset())
 	if err != nil {
 		t.Fatalf("failed to setup db: %v", err)
 	}
@@ -570,7 +598,7 @@ func TestDeleteLog(t *testing.T) {
 		LOGS_API:                 true,
 		LOGS_TYPE:                "File",
 		DB_ENABLE_AUTO_MIGRATION: true,
-	}, logger.Get("info"), test.NewDB(t))
+	}, logger.Get("info"), test.NewDB(t), fakekubeclientset.NewSimpleClientset())
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}

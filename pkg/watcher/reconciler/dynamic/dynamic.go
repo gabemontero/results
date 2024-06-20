@@ -24,9 +24,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/jonboulle/clockwork"
-	"github.com/tektoncd/cli/pkg/cli"
 	tknlog "github.com/tektoncd/cli/pkg/log"
-	tknopts "github.com/tektoncd/cli/pkg/options"
 	pipelinev1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/results/pkg/api/server/v1alpha2/log"
 	"github.com/tektoncd/results/pkg/api/server/v1alpha2/record"
@@ -476,47 +474,48 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 		return fmt.Errorf("failed to create UpdateLog client: %w", err)
 	}
 
-	writer := logs.NewBufferedWriter(logsClient, logName, logs.DefaultBufferSize)
+	writer := logs.NewBufferedWriter(logsClient, logName, 16)
 
-	inMemWriteBufferStdout := bytes.NewBuffer(make([]byte, 0))
-	inMemWriteBufferStderr := bytes.NewBuffer(make([]byte, 0))
-	tknParams := &cli.TektonParams{}
-	tknParams.SetNamespace(o.GetNamespace())
-	// KLUGE: tkn reader.Read() will raise an error if a step in the TaskRun failed and there is no
-	// Err writer in the Stream object. This will result in some "error" messages being written to
-	// the log.  That, coupled with the fact that the tkn client wrappers and oftent masks errors
-	// makes it impossible to differentiate between retryable and permanent k8s errors wrt retrying
-	// reconciliation in this controller
-
-	reader, err := tknlog.NewReader(logType, &tknopts.LogOptions{
-		AllSteps:        true,
-		Params:          tknParams,
-		PipelineRunName: o.GetName(),
-		TaskrunName:     o.GetName(),
-		Stream: &cli.Stream{
-			Out: inMemWriteBufferStdout,
-			Err: inMemWriteBufferStderr,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create tkn reader: %w", err)
-	}
-	logChan, errChan, err := reader.Read()
-	if err != nil {
-		return fmt.Errorf("error reading from tkn reader: %w", err)
-	}
-
-	tknlog.NewWriter(logType, true).Write(&cli.Stream{
-		Out: inMemWriteBufferStdout,
-		Err: inMemWriteBufferStderr,
-	}, logChan, errChan)
-
-	// pull the first error that occurred and return on that; reminder - per https://golang.org/ref/spec#Channel_types
-	// channels act as FIFO queues
-	chanErr, ok := <-errChan
-	if ok && chanErr != nil {
-		return fmt.Errorf("error occurred while calling tkn client write: %w", chanErr)
-	}
+	inMemWriteBufferStdout := bytes.NewBuffer([]byte("noop-data"))
+	//inMemWriteBufferStdout := bytes.NewBuffer(make([]byte, 0))
+	//inMemWriteBufferStderr := bytes.NewBuffer(make([]byte, 0))
+	//tknParams := &cli.TektonParams{}
+	//tknParams.SetNamespace(o.GetNamespace())
+	//// KLUGE: tkn reader.Read() will raise an error if a step in the TaskRun failed and there is no
+	//// Err writer in the Stream object. This will result in some "error" messages being written to
+	//// the log.  That, coupled with the fact that the tkn client wrappers and oftent masks errors
+	//// makes it impossible to differentiate between retryable and permanent k8s errors wrt retrying
+	//// reconciliation in this controller
+	//
+	//reader, err := tknlog.NewReader(logType, &tknopts.LogOptions{
+	//	AllSteps:        true,
+	//	Params:          tknParams,
+	//	PipelineRunName: o.GetName(),
+	//	TaskrunName:     o.GetName(),
+	//	Stream: &cli.Stream{
+	//		Out: inMemWriteBufferStdout,
+	//		Err: inMemWriteBufferStderr,
+	//	},
+	//})
+	//if err != nil {
+	//	return fmt.Errorf("failed to create tkn reader: %w", err)
+	//}
+	//logChan, errChan, err := reader.Read()
+	//if err != nil {
+	//	return fmt.Errorf("error reading from tkn reader: %w", err)
+	//}
+	//
+	//tknlog.NewWriter(logType, true).Write(&cli.Stream{
+	//	Out: inMemWriteBufferStdout,
+	//	Err: inMemWriteBufferStderr,
+	//}, logChan, errChan)
+	//
+	//// pull the first error that occurred and return on that; reminder - per https://golang.org/ref/spec#Channel_types
+	//// channels act as FIFO queues
+	//chanErr, ok := <-errChan
+	//if ok && chanErr != nil {
+	//	return fmt.Errorf("error occurred while calling tkn client write: %w", chanErr)
+	//}
 
 	bufStdout := inMemWriteBufferStdout.Bytes()
 	cntStdout, writeStdOutErr := writer.Write(bufStdout)
@@ -536,17 +535,17 @@ func (r *Reconciler) streamLogs(ctx context.Context, o results.Object, logType, 
 		)
 
 	}
-	bufStderr := inMemWriteBufferStderr.Bytes()
+	//bufStderr := inMemWriteBufferStderr.Bytes()
 	// we do not write these errors to the results api server
 
 	// TODO we may need somehow discern the precise nature of the errors here and adjust how
 	// we return accordingly
-	if len(bufStderr) > 0 {
-		errStr := string(bufStderr)
-		logger.Warnw("tkn client std error output",
-			zap.String("name", o.GetName()),
-			zap.String("errStr", errStr))
-	}
+	//if len(bufStderr) > 0 {
+	//	errStr := string(bufStderr)
+	//	logger.Warnw("tkn client std error output",
+	//		zap.String("name", o.GetName()),
+	//		zap.String("errStr", errStr))
+	//}
 
 	_, flushErr := writer.Flush()
 	if flushErr != nil {

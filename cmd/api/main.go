@@ -147,6 +147,26 @@ func main() {
 		streamWorkers = grpc.NumStreamWorkers((uint32)(grpcWorkers))
 	}
 
+	// Set up k8s client
+	// Create k8s client
+	k8sConfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Fatal("Error getting kubernetes client config:", err)
+	}
+	// Override k8s client qps/burts settings
+	qps := serverConfig.K8S_QPS
+	burst := serverConfig.K8S_BURST
+	if qps > 0 {
+		k8sConfig.QPS = (float32)(qps)
+	}
+	if burst > 0 {
+		k8sConfig.Burst = burst
+	}
+	k8s, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		log.Fatal("Error creating kubernetes clientset:", err)
+	}
+
 	// Create the authorization authCheck
 	var authCheck auth.Checker
 	var serverMuxOptions []runtime.ServeMuxOption
@@ -155,24 +175,6 @@ func main() {
 		authCheck = &auth.AllowAll{}
 	} else {
 		log.Info("Kubernetes RBAC authorization check enabled")
-		// Create k8s client
-		k8sConfig, err := rest.InClusterConfig()
-		if err != nil {
-			log.Fatal("Error getting kubernetes client config:", err)
-		}
-		// Override k8s client qps/burts settings
-		qps := serverConfig.K8S_QPS
-		burst := serverConfig.K8S_BURST
-		if qps > 0 {
-			k8sConfig.QPS = (float32)(qps)
-		}
-		if burst > 0 {
-			k8sConfig.Burst = burst
-		}
-		k8s, err := kubernetes.NewForConfig(k8sConfig)
-		if err != nil {
-			log.Fatal("Error creating kubernetes clientset:", err)
-		}
 
 		if serverConfig.AUTH_IMPERSONATE {
 			log.Info("Kubernetes RBAC impersonation enabled")
@@ -182,7 +184,7 @@ func main() {
 	}
 
 	// Register API server(s)
-	v1a2, err := v1alpha2.New(serverConfig, log, db, v1alpha2.WithAuth(authCheck))
+	v1a2, err := v1alpha2.New(serverConfig, log, db, k8s, v1alpha2.WithAuth(authCheck))
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}

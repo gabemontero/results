@@ -417,7 +417,13 @@ func (ht *serverHandlerTransport) HandleStreams(ctx context.Context, startStream
 		// TODO: minimize garbage, optimize recvBuffer code/ownership
 		const readSize = 8196
 		for buf := make([]byte, readSize); ; {
+			start := time.Now()
 			n, err := req.Body.Read(buf)
+			end := time.Now()
+			duration := end.Sub(start)
+			if duration.Seconds() > 3 {
+				fmt.Println(fmt.Sprintf("GGMGGM18 HandleStream read loop single iter time %s ts %d.%09d req obj %#v", duration.String(), end.Unix(), end.Nanosecond(), req))
+			}
 			if n > 0 {
 				s.buf.put(recvMsg{buffer: bytes.NewBuffer(buf[:n:n])})
 				buf = buf[n:]
