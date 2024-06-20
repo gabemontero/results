@@ -1046,11 +1046,25 @@ func (t *http2Client) Write(s *Stream, hdr []byte, data []byte, opts *Options) e
 		d:         data,
 	}
 	if hdr != nil || data != nil { // If it's not an empty data frame, check quota.
-		if err := s.wq.get(int32(len(hdr) + len(data))); err != nil {
+		start := time.Now()
+		err := s.wq.get(int32(len(hdr) + len(data)))
+		end := time.Now()
+		duration := end.Sub(start)
+		if duration.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM42 http2Client Write get write quota ts %s %d.%09d any %#v", duration.String(), end.Unix(), end.Nanosecond(), s))
+		}
+		if  err != nil {
 			return err
 		}
 	}
-	return t.controlBuf.put(df)
+	start := time.Now()
+	err := t.controlBuf.put(df)
+	end := time.Now()
+	duration := end.Sub(start)
+	if duration.Seconds() > 3 {
+		fmt.Println(fmt.Sprintf("GGMGGM41 http2Client Write control buf put ts %s %d.%09d any %#v", duration.String(), end.Unix(), end.Nanosecond(), s))
+	}
+	return err
 }
 
 func (t *http2Client) getStream(f http2.Frame) *Stream {

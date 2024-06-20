@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
@@ -549,7 +550,13 @@ func (l *loopyWriter) run() (err error) {
 		l.cbuf.finish()
 	}()
 	for {
+		start := time.Now()
 		it, err := l.cbuf.get(true)
+		end := time.Now()
+		duration := end.Sub(start)
+		if duration.Seconds() > 3 {
+			fmt.Println(fmt.Sprintf("GGMGGM40 loopyWriter run blocking control buffer read ts %s %d.%09d any %#v", duration.String(), end.Unix(), end.Nanosecond(), it))
+		}
 		if err != nil {
 			return err
 		}
