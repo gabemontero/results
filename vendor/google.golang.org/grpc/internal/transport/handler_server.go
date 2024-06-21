@@ -236,6 +236,14 @@ func (ht *serverHandlerTransport) WriteStatus(s *Stream, st *status.Status) erro
 
 	headersWritten := s.updateHeaderSent()
 	err := ht.do(func() {
+		start := time.Now()
+		defer func() {
+			end := time.Now()
+			duration := end.Sub(start)
+			if duration.Seconds() > 10 {
+				fmt.Println(fmt.Sprintf("GGMGGM34 serverHandlerTransport WriteStatus do(func) %s ts %d.%09d", duration.String(), end.Unix(), end.Nanosecond()))
+			}
+		}()
 		if !headersWritten {
 			ht.writePendingHeaders(s)
 		}
