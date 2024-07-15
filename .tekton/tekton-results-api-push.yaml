@@ -16,7 +16,7 @@ spec:
     - name: revision
       value: "{{revision}}"
     - name: output-image
-      value: "quay.io/redhat-appstudio/tekton-results-api:{{revision}}"
+      value: "quay.io/konflux-ci/tekton-results-api:{{revision}}"
     - name: dockerfile
       value: images/api/Dockerfile
   pipelineRef:
